@@ -61,6 +61,40 @@ public static class TodoBoardViews
         view == Calendar ? Calendar : Table;
 }
 
+public static class TodoBoardSorts
+{
+    public const string Default = "default";
+    public const string TaskAscending = "task-asc";
+    public const string TaskDescending = "task-desc";
+    public const string StatusAscending = "status-asc";
+    public const string StatusDescending = "status-desc";
+    public const string PaperAscending = "paper-asc";
+    public const string PaperDescending = "paper-desc";
+    public const string CreatedAscending = "created-asc";
+    public const string CreatedDescending = "created-desc";
+    public const string CompletedAscending = "completed-asc";
+    public const string CompletedDescending = "completed-desc";
+    public const string NoteAscending = "note-asc";
+    public const string NoteDescending = "note-desc";
+
+    public static string Normalize(string? sort) => sort switch
+    {
+        TaskAscending or
+        TaskDescending or
+        StatusAscending or
+        StatusDescending or
+        PaperAscending or
+        PaperDescending or
+        CreatedAscending or
+        CreatedDescending or
+        CompletedAscending or
+        CompletedDescending or
+        NoteAscending or
+        NoteDescending => sort,
+        _ => Default
+    };
+}
+
 public static class MarkdownRenderModes
 {
     public const string Off = "off";
@@ -575,6 +609,7 @@ public sealed class PaperData
     public string Type { get; set; } = PaperTypes.Todo;
     public string Title { get; set; } = "";
     public string BoardView { get; set; } = TodoBoardViews.Table;
+    public string BoardSort { get; set; } = TodoBoardSorts.Default;
 
     public double X { get; set; } = 120;
     public double Y { get; set; } = 120;

@@ -369,6 +369,7 @@ public sealed class StateStore
 
             paper.Type = PaperTypes.Normalize(paper.Type);
             paper.BoardView = TodoBoardViews.Normalize(paper.BoardView);
+            paper.BoardSort = TodoBoardSorts.Normalize(paper.BoardSort);
             paper.Content ??= "";
             paper.X = NormalizeCoordinate(paper.X, 120);
             paper.Y = NormalizeCoordinate(paper.Y, 120);
@@ -592,6 +593,7 @@ public sealed class StateStore
 
             paper.Type = PaperTypes.Normalize(paper.Type);
             paper.BoardView = TodoBoardViews.Normalize(paper.BoardView);
+            paper.BoardSort = TodoBoardSorts.Normalize(paper.BoardSort);
 
             paper.BodyProviderId = paper.Type == PaperTypes.Note
                 ? NormalizeBodyProviderId(paper.BodyProviderId)

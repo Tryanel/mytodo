@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -19,6 +20,12 @@ public sealed partial class PaperWindow
     private Button? _todoBoardTableButton;
     private Button? _todoBoardCalendarButton;
     private TextBlock? _todoBoardCountText;
+    private StackPanel? _todoBoardTableTools;
+    private TextBox? _todoBoardSearchBox;
+    private TextBlock? _todoBoardSearchPlaceholder;
+    private Button? _todoBoardClearSearchButton;
+    private Button? _todoBoardSortButton;
+    private string _todoBoardSearchQuery = "";
     private bool _todoBoardRefreshScheduled;
     private DateTime _todoBoardCalendarMonth = new(
         DateTime.Today.Year,
@@ -70,6 +77,19 @@ public sealed partial class PaperWindow
             Orientation = Orientation.Horizontal,
             VerticalAlignment = VerticalAlignment.Center
         };
+        _todoBoardTableTools = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 10, 0)
+        };
+        _todoBoardTableTools.Children.Add(BuildTodoBoardSearchControl());
+        _todoBoardSortButton = CreateTodoBoardToolbarButton(
+            "↕",
+            Strings.Get("TodoBoardSort"),
+            OpenTodoBoardSortMenu);
+        _todoBoardSortButton.Margin = new Thickness(5, 0, 0, 0);
+        _todoBoardTableTools.Children.Add(_todoBoardSortButton);
         _todoBoardCountText = new TextBlock
         {
             Foreground = WeakTextBrush,
@@ -81,6 +101,7 @@ public sealed partial class PaperWindow
             "↻",
             Strings.Get("TodoBoardRefresh"),
             RefreshTodoBoardBody);
+        summary.Children.Add(_todoBoardTableTools);
         summary.Children.Add(_todoBoardCountText);
         summary.Children.Add(refresh);
         Grid.SetColumn(summary, 1);
@@ -185,46 +206,528 @@ public sealed partial class PaperWindow
         _todoBoardBody!.Background = PaperBrush;
         var view = TodoBoardViews.Normalize(_paper.BoardView);
         _paper.BoardView = view;
+        _paper.BoardSort = TodoBoardSorts.Normalize(_paper.BoardSort);
         UpdateTodoBoardViewButton(_todoBoardTableButton, view == TodoBoardViews.Table);
         UpdateTodoBoardViewButton(_todoBoardCalendarButton, view == TodoBoardViews.Calendar);
+        if (_todoBoardTableTools != null)
+        {
+            _todoBoardTableTools.Visibility = view == TodoBoardViews.Table
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+        UpdateTodoBoardSortButton();
 
         var entries = CollectTodoBoardEntries();
+        var displayedEntries = view == TodoBoardViews.Table
+            ? ApplyTodoBoardTableQuery(entries)
+            : entries;
+        var hasSearch = !string.IsNullOrWhiteSpace(_todoBoardSearchQuery);
         if (_todoBoardCountText != null)
         {
             _todoBoardCountText.Foreground = WeakTextBrush;
-            _todoBoardCountText.Text = Strings.Format(
-                "TodoBoardItemCount",
-                entries.Count);
+            _todoBoardCountText.Text = view == TodoBoardViews.Table && hasSearch
+                ? Strings.Format(
+                    "TodoBoardFilteredCount",
+                    displayedEntries.Count,
+                    entries.Count)
+                : Strings.Format("TodoBoardItemCount", entries.Count);
         }
 
         _todoBoardContentHost.Children.Clear();
         _todoBoardContentHost.Children.Add(entries.Count == 0
             ? BuildTodoBoardEmptyState()
+            : view == TodoBoardViews.Table && displayedEntries.Count == 0
+                ? BuildTodoBoardNoResultsState()
             : view == TodoBoardViews.Calendar
                 ? BuildTodoBoardCalendar(entries)
-                : BuildTodoBoardTable(entries));
+                : BuildTodoBoardTable(displayedEntries));
     }
 
     private List<TodoBoardEntry> CollectTodoBoardEntries() =>
         _controller.State.Papers
-            .Where(paper => paper.Type == PaperTypes.Todo)
-            .SelectMany(paper => paper.Items
+            .Select((paper, paperOrder) => (paper, paperOrder))
+            .Where(source => source.paper.Type == PaperTypes.Todo)
+            .SelectMany(source => source.paper.Items
                 .Where(item => !TodoRules.IsPlaceholder(item))
                 .Select(item => new TodoBoardEntry(
-                    paper.Id,
+                    source.paper.Id,
                     item.Id,
-                    _controller.PaperDisplayTitle(paper),
+                    _controller.PaperDisplayTitle(source.paper),
                     item.Text,
                     item.Note,
                     item.Done,
                     item.CreatedAt,
                     item.CompletedAt,
-                    item.Order)))
-            .OrderBy(entry => entry.Done)
-            .ThenByDescending(entry => entry.CreatedAt)
-            .ThenBy(entry => entry.PaperTitle, StringComparer.CurrentCulture)
-            .ThenBy(entry => entry.Order)
+                    item.Order,
+                    source.paperOrder)))
             .ToList();
+
+    private UIElement BuildTodoBoardSearchControl()
+    {
+        var layout = new Grid();
+        layout.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        layout.ColumnDefinitions.Add(new ColumnDefinition
+        {
+            Width = new GridLength(1, GridUnitType.Star)
+        });
+        layout.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var icon = new TextBlock
+        {
+            Text = "⌕",
+            Foreground = WeakTextBrush,
+            FontFamily = AppTypography.SymbolFontFamily,
+            FontSize = AppTypography.Scale(12),
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(7, 0, 5, 0),
+            IsHitTestVisible = false
+        };
+
+        _todoBoardSearchBox = new TextBox
+        {
+            Text = _todoBoardSearchQuery,
+            Foreground = TextBrush,
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            CaretBrush = TextBrush,
+            FontSize = AppTypography.Scale(10.8),
+            Padding = new Thickness(0),
+            VerticalContentAlignment = VerticalAlignment.Center,
+            ToolTip = Strings.Get("TodoBoardSearchToolTip")
+        };
+        AutomationProperties.SetName(
+            _todoBoardSearchBox,
+            Strings.Get("TodoBoardSearchPlaceholder"));
+
+        _todoBoardSearchPlaceholder = new TextBlock
+        {
+            Text = Strings.Get("TodoBoardSearchPlaceholder"),
+            Foreground = TextBrush,
+            FontSize = AppTypography.Scale(10.8),
+            VerticalAlignment = VerticalAlignment.Center,
+            IsHitTestVisible = false,
+            Opacity = 0.68,
+            Visibility = string.IsNullOrEmpty(_todoBoardSearchQuery)
+                ? Visibility.Visible
+                : Visibility.Collapsed
+        };
+
+        var textHost = new Grid { VerticalAlignment = VerticalAlignment.Stretch };
+        textHost.Children.Add(_todoBoardSearchPlaceholder);
+        textHost.Children.Add(_todoBoardSearchBox);
+        Grid.SetColumn(textHost, 1);
+
+        _todoBoardClearSearchButton = CreateTodoBoardIconButton(
+            "×",
+            Strings.Get("TodoBoardClearSearch"),
+            ClearTodoBoardSearch);
+        _todoBoardClearSearchButton.Width = 22;
+        _todoBoardClearSearchButton.Height = 24;
+        _todoBoardClearSearchButton.Visibility =
+            string.IsNullOrEmpty(_todoBoardSearchQuery)
+                ? Visibility.Collapsed
+                : Visibility.Visible;
+        Grid.SetColumn(_todoBoardClearSearchButton, 2);
+
+        layout.Children.Add(icon);
+        layout.Children.Add(textHost);
+        layout.Children.Add(_todoBoardClearSearchButton);
+
+        var border = new Border
+        {
+            Width = 210,
+            Height = 28,
+            Background = Theme.Tint((byte)(Theme.IsDark ? 16 : 8)),
+            BorderBrush = PaperBorderBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(5),
+            Child = layout
+        };
+        _todoBoardSearchBox.GotKeyboardFocus += (_, _) =>
+            border.BorderBrush = Theme.ActiveBrush;
+        _todoBoardSearchBox.LostKeyboardFocus += (_, _) =>
+            border.BorderBrush = PaperBorderBrush;
+        _todoBoardSearchBox.TextChanged += (_, _) =>
+        {
+            _todoBoardSearchQuery = _todoBoardSearchBox.Text;
+            var empty = string.IsNullOrEmpty(_todoBoardSearchQuery);
+            if (_todoBoardSearchPlaceholder != null)
+            {
+                _todoBoardSearchPlaceholder.Visibility = empty
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+            }
+            if (_todoBoardClearSearchButton != null)
+            {
+                _todoBoardClearSearchButton.Visibility = empty
+                    ? Visibility.Collapsed
+                    : Visibility.Visible;
+            }
+            RefreshTodoBoardBody();
+        };
+        _todoBoardSearchBox.PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Escape &&
+                !string.IsNullOrEmpty(_todoBoardSearchQuery))
+            {
+                ClearTodoBoardSearch();
+                e.Handled = true;
+            }
+        };
+        return border;
+    }
+
+    private List<TodoBoardEntry> ApplyTodoBoardTableQuery(
+        IEnumerable<TodoBoardEntry> entries)
+    {
+        var query = _todoBoardSearchQuery.Trim();
+        var filtered = string.IsNullOrEmpty(query)
+            ? entries
+            : entries.Where(entry => TodoBoardEntryMatchesSearch(entry, query));
+        return SortTodoBoardEntries(filtered).ToList();
+    }
+
+    private static bool TodoBoardEntryMatchesSearch(
+        TodoBoardEntry entry,
+        string query)
+    {
+        var comparison = StringComparison.CurrentCultureIgnoreCase;
+        return entry.Text.Contains(query, comparison) ||
+            entry.Note.Contains(query, comparison) ||
+            entry.PaperTitle.Contains(query, comparison) ||
+            Strings.Get(entry.Done ? "TodoBoardDone" : "TodoBoardPending")
+                .Contains(query, comparison) ||
+            FormatTodoBoardTimestamp(entry.CreatedAt).Contains(query, comparison) ||
+            (entry.CompletedAt.HasValue &&
+             FormatTodoBoardTimestamp(entry.CompletedAt.Value)
+                 .Contains(query, comparison));
+    }
+
+    private IOrderedEnumerable<TodoBoardEntry> SortTodoBoardEntries(
+        IEnumerable<TodoBoardEntry> entries)
+    {
+        var textComparer = StringComparer.CurrentCultureIgnoreCase;
+        return TodoBoardSorts.Normalize(_paper.BoardSort) switch
+        {
+            TodoBoardSorts.TaskAscending => entries
+                .OrderBy(entry => entry.Text, textComparer)
+                .ThenBy(entry => entry.PaperOrder)
+                .ThenBy(entry => entry.Order),
+            TodoBoardSorts.TaskDescending => entries
+                .OrderByDescending(entry => entry.Text, textComparer)
+                .ThenBy(entry => entry.PaperOrder)
+                .ThenBy(entry => entry.Order),
+            TodoBoardSorts.StatusAscending => entries
+                .OrderBy(entry => entry.Done)
+                .ThenByDescending(entry => entry.CreatedAt)
+                .ThenBy(entry => entry.PaperOrder)
+                .ThenBy(entry => entry.Order),
+            TodoBoardSorts.StatusDescending => entries
+                .OrderByDescending(entry => entry.Done)
+                .ThenByDescending(entry => entry.CreatedAt)
+                .ThenBy(entry => entry.PaperOrder)
+                .ThenBy(entry => entry.Order),
+            TodoBoardSorts.PaperAscending => entries
+                .OrderBy(entry => entry.PaperTitle, textComparer)
+                .ThenBy(entry => entry.Order),
+            TodoBoardSorts.PaperDescending => entries
+                .OrderByDescending(entry => entry.PaperTitle, textComparer)
+                .ThenBy(entry => entry.Order),
+            TodoBoardSorts.CreatedAscending => entries
+                .OrderBy(entry => entry.CreatedAt)
+                .ThenBy(entry => entry.PaperOrder)
+                .ThenBy(entry => entry.Order),
+            TodoBoardSorts.CreatedDescending => entries
+                .OrderByDescending(entry => entry.CreatedAt)
+                .ThenBy(entry => entry.PaperOrder)
+                .ThenBy(entry => entry.Order),
+            TodoBoardSorts.CompletedAscending => entries
+                .OrderBy(entry => !entry.CompletedAt.HasValue)
+                .ThenBy(entry => entry.CompletedAt)
+                .ThenBy(entry => entry.PaperOrder)
+                .ThenBy(entry => entry.Order),
+            TodoBoardSorts.CompletedDescending => entries
+                .OrderBy(entry => !entry.CompletedAt.HasValue)
+                .ThenByDescending(entry => entry.CompletedAt)
+                .ThenBy(entry => entry.PaperOrder)
+                .ThenBy(entry => entry.Order),
+            TodoBoardSorts.NoteAscending => entries
+                .OrderBy(entry => string.IsNullOrWhiteSpace(entry.Note))
+                .ThenBy(entry => entry.Note, textComparer)
+                .ThenBy(entry => entry.PaperOrder)
+                .ThenBy(entry => entry.Order),
+            TodoBoardSorts.NoteDescending => entries
+                .OrderBy(entry => string.IsNullOrWhiteSpace(entry.Note))
+                .ThenByDescending(entry => entry.Note, textComparer)
+                .ThenBy(entry => entry.PaperOrder)
+                .ThenBy(entry => entry.Order),
+            _ => entries
+                .OrderBy(entry => entry.Done)
+                .ThenByDescending(entry => entry.CreatedAt)
+                .ThenBy(entry => entry.PaperTitle, textComparer)
+                .ThenBy(entry => entry.Order)
+        };
+    }
+
+    private void ClearTodoBoardSearch()
+    {
+        _todoBoardSearchQuery = "";
+        if (_todoBoardSearchBox != null)
+        {
+            _todoBoardSearchBox.Text = "";
+            _todoBoardSearchBox.Focus();
+        }
+        else
+        {
+            RefreshTodoBoardBody();
+        }
+    }
+
+    private bool HandleTodoBoardPreviewKeyDown(KeyEventArgs e)
+    {
+        if (_paper.Type != PaperTypes.Board)
+        {
+            return false;
+        }
+
+        if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.F)
+        {
+            if (!string.Equals(
+                    _paper.BoardView,
+                    TodoBoardViews.Table,
+                    StringComparison.Ordinal))
+            {
+                SetTodoBoardView(TodoBoardViews.Table);
+            }
+            _ = Dispatcher.BeginInvoke(
+                (Action)(() =>
+                {
+                    _todoBoardSearchBox?.Focus();
+                    _todoBoardSearchBox?.SelectAll();
+                }),
+                DispatcherPriority.Input);
+            return true;
+        }
+
+        if (e.Key == Key.Escape &&
+            Keyboard.Modifiers == ModifierKeys.None &&
+            _todoBoardSearchBox?.IsKeyboardFocusWithin == true &&
+            !string.IsNullOrEmpty(_todoBoardSearchQuery))
+        {
+            ClearTodoBoardSearch();
+            return true;
+        }
+
+        return false;
+    }
+
+    private UIElement BuildTodoBoardNoResultsState()
+    {
+        var stack = new StackPanel
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            MaxWidth = 380
+        };
+        stack.Children.Add(new TextBlock
+        {
+            Text = "⌕",
+            Foreground = WeakTextBrush,
+            FontFamily = AppTypography.SymbolFontFamily,
+            FontSize = AppTypography.Scale(24),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Opacity = 0.72
+        });
+        stack.Children.Add(new TextBlock
+        {
+            Text = Strings.Get("TodoBoardNoResults"),
+            Foreground = TextBrush,
+            FontSize = AppTypography.Scale(14.5),
+            FontWeight = FontWeights.SemiBold,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 9, 0, 0)
+        });
+        stack.Children.Add(new TextBlock
+        {
+            Text = Strings.Get("TodoBoardNoResultsHint"),
+            Foreground = WeakTextBrush,
+            FontSize = AppTypography.Scale(11.2),
+            TextAlignment = TextAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 5, 0, 10)
+        });
+        stack.Children.Add(CreateTodoBoardTextButton(
+            Strings.Get("TodoBoardClearSearch"),
+            ClearTodoBoardSearch));
+        return stack;
+    }
+
+    private void OpenTodoBoardSortMenu()
+    {
+        if (_todoBoardSortButton == null)
+        {
+            return;
+        }
+
+        var menu = CreateContextMenu();
+        menu.Items.Add(CreateTodoBoardSortOption(
+            Strings.Get("TodoBoardSortDefault"),
+            TodoBoardSorts.Default));
+        menu.Items.Add(MenuSeparator());
+        menu.Items.Add(BuildTodoBoardSortGroup(
+            Strings.Get("TodoBoardTask"),
+            Strings.Get("TodoBoardSortAscending"),
+            TodoBoardSorts.TaskAscending,
+            Strings.Get("TodoBoardSortDescending"),
+            TodoBoardSorts.TaskDescending));
+        menu.Items.Add(BuildTodoBoardSortGroup(
+            Strings.Get("TodoBoardStatus"),
+            Strings.Get("TodoBoardSortActiveFirst"),
+            TodoBoardSorts.StatusAscending,
+            Strings.Get("TodoBoardSortDoneFirst"),
+            TodoBoardSorts.StatusDescending));
+        menu.Items.Add(BuildTodoBoardSortGroup(
+            Strings.Get("TodoBoardPaper"),
+            Strings.Get("TodoBoardSortAscending"),
+            TodoBoardSorts.PaperAscending,
+            Strings.Get("TodoBoardSortDescending"),
+            TodoBoardSorts.PaperDescending));
+        menu.Items.Add(BuildTodoBoardSortGroup(
+            Strings.Get("TodoBoardCreated"),
+            Strings.Get("TodoBoardSortNewestFirst"),
+            TodoBoardSorts.CreatedDescending,
+            Strings.Get("TodoBoardSortOldestFirst"),
+            TodoBoardSorts.CreatedAscending));
+        menu.Items.Add(BuildTodoBoardSortGroup(
+            Strings.Get("TodoBoardCompleted"),
+            Strings.Get("TodoBoardSortNewestFirst"),
+            TodoBoardSorts.CompletedDescending,
+            Strings.Get("TodoBoardSortOldestFirst"),
+            TodoBoardSorts.CompletedAscending));
+        menu.Items.Add(BuildTodoBoardSortGroup(
+            Strings.Get("TodoBoardNote"),
+            Strings.Get("TodoBoardSortAscending"),
+            TodoBoardSorts.NoteAscending,
+            Strings.Get("TodoBoardSortDescending"),
+            TodoBoardSorts.NoteDescending));
+        menu.PlacementTarget = _todoBoardSortButton;
+        menu.Placement = PlacementMode.Bottom;
+        menu.HorizontalOffset = -4;
+        menu.IsOpen = true;
+    }
+
+    private MenuItem BuildTodoBoardSortGroup(
+        string header,
+        string firstLabel,
+        string firstSort,
+        string secondLabel,
+        string secondSort)
+    {
+        var group = new MenuItem
+        {
+            Header = header,
+            Padding = new Thickness(8, 4, 10, 4),
+            Background = Brushes.Transparent
+        };
+        group.SetResourceReference(Control.ForegroundProperty, "TextBrushKey");
+        group.Items.Add(CreateTodoBoardSortOption(firstLabel, firstSort));
+        group.Items.Add(CreateTodoBoardSortOption(secondLabel, secondSort));
+        return group;
+    }
+
+    private MenuItem CreateTodoBoardSortOption(string label, string sort)
+    {
+        var normalized = TodoBoardSorts.Normalize(sort);
+        var item = MenuItem(label, (_, _) => SetTodoBoardSort(normalized));
+        item.IsCheckable = true;
+        item.IsChecked = string.Equals(
+            TodoBoardSorts.Normalize(_paper.BoardSort),
+            normalized,
+            StringComparison.Ordinal);
+        return item;
+    }
+
+    private void SetTodoBoardSort(string sort)
+    {
+        var normalized = TodoBoardSorts.Normalize(sort);
+        if (string.Equals(_paper.BoardSort, normalized, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _paper.BoardSort = normalized;
+        RefreshTodoBoardBody();
+        _controller.MarkDirty();
+    }
+
+    private void ToggleTodoBoardSort(
+        string ascendingSort,
+        string descendingSort,
+        bool descendingFirst = false)
+    {
+        var current = TodoBoardSorts.Normalize(_paper.BoardSort);
+        var next = string.Equals(current, ascendingSort, StringComparison.Ordinal)
+            ? descendingSort
+            : string.Equals(current, descendingSort, StringComparison.Ordinal)
+                ? ascendingSort
+                : descendingFirst
+                    ? descendingSort
+                    : ascendingSort;
+        SetTodoBoardSort(next);
+    }
+
+    private void UpdateTodoBoardSortButton()
+    {
+        if (_todoBoardSortButton == null)
+        {
+            return;
+        }
+
+        var sort = TodoBoardSorts.Normalize(_paper.BoardSort);
+        var isDefault = sort == TodoBoardSorts.Default;
+        _todoBoardSortButton.Foreground = isDefault ? TextBrush : Theme.ActiveBrush;
+        _todoBoardSortButton.Background = isDefault
+            ? Brushes.Transparent
+            : Theme.Tint((byte)(Theme.IsDark ? 42 : 24));
+        var description = TodoBoardSortDescription(sort);
+        _todoBoardSortButton.ToolTip = Strings.Format(
+            "TodoBoardSortCurrent",
+            description);
+        AutomationProperties.SetName(
+            _todoBoardSortButton,
+            Strings.Format("TodoBoardSortCurrent", description));
+    }
+
+    private static string TodoBoardSortDescription(string sort) =>
+        TodoBoardSorts.Normalize(sort) switch
+        {
+            TodoBoardSorts.TaskAscending =>
+                $"{Strings.Get("TodoBoardTask")} · {Strings.Get("TodoBoardSortAscending")}",
+            TodoBoardSorts.TaskDescending =>
+                $"{Strings.Get("TodoBoardTask")} · {Strings.Get("TodoBoardSortDescending")}",
+            TodoBoardSorts.StatusAscending =>
+                $"{Strings.Get("TodoBoardStatus")} · {Strings.Get("TodoBoardSortActiveFirst")}",
+            TodoBoardSorts.StatusDescending =>
+                $"{Strings.Get("TodoBoardStatus")} · {Strings.Get("TodoBoardSortDoneFirst")}",
+            TodoBoardSorts.PaperAscending =>
+                $"{Strings.Get("TodoBoardPaper")} · {Strings.Get("TodoBoardSortAscending")}",
+            TodoBoardSorts.PaperDescending =>
+                $"{Strings.Get("TodoBoardPaper")} · {Strings.Get("TodoBoardSortDescending")}",
+            TodoBoardSorts.CreatedAscending =>
+                $"{Strings.Get("TodoBoardCreated")} · {Strings.Get("TodoBoardSortOldestFirst")}",
+            TodoBoardSorts.CreatedDescending =>
+                $"{Strings.Get("TodoBoardCreated")} · {Strings.Get("TodoBoardSortNewestFirst")}",
+            TodoBoardSorts.CompletedAscending =>
+                $"{Strings.Get("TodoBoardCompleted")} · {Strings.Get("TodoBoardSortOldestFirst")}",
+            TodoBoardSorts.CompletedDescending =>
+                $"{Strings.Get("TodoBoardCompleted")} · {Strings.Get("TodoBoardSortNewestFirst")}",
+            TodoBoardSorts.NoteAscending =>
+                $"{Strings.Get("TodoBoardNote")} · {Strings.Get("TodoBoardSortAscending")}",
+            TodoBoardSorts.NoteDescending =>
+                $"{Strings.Get("TodoBoardNote")} · {Strings.Get("TodoBoardSortDescending")}",
+            _ => Strings.Get("TodoBoardSortDefault")
+        };
 
     private UIElement BuildTodoBoardEmptyState()
     {
@@ -301,12 +804,27 @@ public sealed partial class PaperWindow
         var row = CreateTodoBoardTableGrid();
         row.Height = 34;
         row.Background = Theme.Tint((byte)(Theme.IsDark ? 16 : 9));
-        AddTodoBoardTableHeaderCell(row, 0, "Aa", Strings.Get("TodoBoardTask"));
-        AddTodoBoardTableHeaderCell(row, 1, "◉", Strings.Get("TodoBoardStatus"));
-        AddTodoBoardTableHeaderCell(row, 2, "□", Strings.Get("TodoBoardPaper"));
-        AddTodoBoardTableHeaderCell(row, 3, "◷", Strings.Get("TodoBoardCreated"));
-        AddTodoBoardTableHeaderCell(row, 4, "✓", Strings.Get("TodoBoardCompleted"));
-        AddTodoBoardTableHeaderCell(row, 5, "≡", Strings.Get("TodoBoardNote"), last: true);
+        AddTodoBoardTableHeaderCell(
+            row, 0, "Aa", Strings.Get("TodoBoardTask"),
+            TodoBoardSorts.TaskAscending, TodoBoardSorts.TaskDescending);
+        AddTodoBoardTableHeaderCell(
+            row, 1, "◉", Strings.Get("TodoBoardStatus"),
+            TodoBoardSorts.StatusAscending, TodoBoardSorts.StatusDescending);
+        AddTodoBoardTableHeaderCell(
+            row, 2, "□", Strings.Get("TodoBoardPaper"),
+            TodoBoardSorts.PaperAscending, TodoBoardSorts.PaperDescending);
+        AddTodoBoardTableHeaderCell(
+            row, 3, "◷", Strings.Get("TodoBoardCreated"),
+            TodoBoardSorts.CreatedAscending, TodoBoardSorts.CreatedDescending,
+            descendingFirst: true);
+        AddTodoBoardTableHeaderCell(
+            row, 4, "✓", Strings.Get("TodoBoardCompleted"),
+            TodoBoardSorts.CompletedAscending, TodoBoardSorts.CompletedDescending,
+            descendingFirst: true);
+        AddTodoBoardTableHeaderCell(
+            row, 5, "≡", Strings.Get("TodoBoardNote"),
+            TodoBoardSorts.NoteAscending, TodoBoardSorts.NoteDescending,
+            last: true);
         return row;
     }
 
@@ -392,8 +910,21 @@ public sealed partial class PaperWindow
         int column,
         string glyph,
         string text,
+        string ascendingSort,
+        string descendingSort,
+        bool descendingFirst = false,
         bool last = false)
     {
+        var currentSort = TodoBoardSorts.Normalize(_paper.BoardSort);
+        var isAscending = string.Equals(
+            currentSort,
+            ascendingSort,
+            StringComparison.Ordinal);
+        var isDescending = string.Equals(
+            currentSort,
+            descendingSort,
+            StringComparison.Ordinal);
+        var isActive = isAscending || isDescending;
         var content = new StackPanel
         {
             Orientation = Orientation.Horizontal,
@@ -410,18 +941,64 @@ public sealed partial class PaperWindow
         content.Children.Add(new TextBlock
         {
             Text = text,
-            Foreground = WeakTextBrush,
+            Foreground = isActive ? Theme.ActiveBrush : WeakTextBrush,
             FontSize = AppTypography.Scale(10.5),
-            FontWeight = FontWeights.Medium,
+            FontWeight = isActive ? FontWeights.SemiBold : FontWeights.Medium,
             Margin = new Thickness(6, 0, 0, 0),
             VerticalAlignment = VerticalAlignment.Center
         });
+        if (isActive)
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = isDescending ? "↓" : "↑",
+                Foreground = Theme.ActiveBrush,
+                FontSize = AppTypography.Scale(10),
+                FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(5, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            });
+        }
         var cell = new Border
         {
             Padding = new Thickness(10, 0, 8, 0),
             BorderBrush = PaperBorderBrush,
             BorderThickness = new Thickness(0, 0, last ? 0 : 1, 1),
+            Background = Brushes.Transparent,
+            Cursor = Cursors.Hand,
+            Focusable = true,
+            ToolTip = Strings.Format("TodoBoardSortBy", text),
             Child = content
+        };
+        AutomationProperties.SetName(
+            cell,
+            Strings.Format("TodoBoardSortBy", text));
+        cell.MouseEnter += (_, _) => cell.Background = HoverBrush;
+        cell.MouseLeave += (_, _) => cell.Background = cell.IsKeyboardFocusWithin
+            ? Theme.Tint((byte)(Theme.IsDark ? 36 : 22))
+            : Brushes.Transparent;
+        cell.GotKeyboardFocus += (_, _) =>
+            cell.Background = Theme.Tint((byte)(Theme.IsDark ? 36 : 22));
+        cell.LostKeyboardFocus += (_, _) =>
+            cell.Background = cell.IsMouseOver ? HoverBrush : Brushes.Transparent;
+        cell.MouseLeftButtonUp += (_, e) =>
+        {
+            ToggleTodoBoardSort(
+                ascendingSort,
+                descendingSort,
+                descendingFirst);
+            e.Handled = true;
+        };
+        cell.KeyDown += (_, e) =>
+        {
+            if (e.Key is Key.Enter or Key.Space)
+            {
+                ToggleTodoBoardSort(
+                    ascendingSort,
+                    descendingSort,
+                    descendingFirst);
+                e.Handled = true;
+            }
         };
         Grid.SetColumn(cell, column);
         row.Children.Add(cell);
@@ -906,5 +1483,6 @@ public sealed partial class PaperWindow
         bool Done,
         DateTimeOffset CreatedAt,
         DateTimeOffset? CompletedAt,
-        int Order);
+        int Order,
+        int PaperOrder);
 }

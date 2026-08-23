@@ -387,6 +387,7 @@ internal sealed class McpCommandService
                 title = paper.Title,
                 is_visible = paper.IsVisible,
                 board_view = TodoBoardViews.Normalize(model.BoardView),
+                board_sort = TodoBoardSorts.Normalize(model.BoardSort),
                 task_count = _commands.ListTodos(includeBlank: false).Count
             };
         }

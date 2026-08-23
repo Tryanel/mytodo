@@ -60,7 +60,7 @@ A minimal Windows desktop sticky-note app built with native WPF. No permanent ma
 - **Script capsules** — Start a note with `!p` / `!power` to run its contents quickly as a PowerShell script.
 - **Link papers to todos** — Drag a note paper onto a todo item, then open the target paper directly; the link model also supports plugin bodies and other todo papers.
 - **Todo notes and timestamps** — Each todo can have a multiline note and automatically records its created and completed times.
-- **Task board paper** — Open the single global board paper from the tray, view every todo in a Notion-inspired database table or month calendar span, and navigate back to its source paper.
+- **Task board paper** — Open the single global board paper from the tray and view every todo in a Notion-inspired database table or month-calendar span. The table supports cross-field search, a sort menu, clickable column sorting, and navigation back to the source paper.
 - **Markdown export** — Export any paper as `.md`; todo exports include tasks, notes, and timestamps, while the board exports every task grouped by source paper.
 - **Note images** — Paste, drop, or choose local images from the menu.
 - **Local data** — Papers auto-save to `data.json` with a backup; note images are written incrementally and safely to a single `note-assets.lmdb` file.
