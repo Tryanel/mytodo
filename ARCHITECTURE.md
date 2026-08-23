@@ -185,7 +185,7 @@ transport 权限、Web/Native surface 生命周期和 MCP protocol 不下沉到 
 
 ### 5.5 Todo 全局投影与纸片导出
 
-`PaperTypes.Board` 是全局单例的纸片类型，使用普通 `PaperData` / `PaperWindow` shell，因此沿用显示、移动、尺寸、折叠胶囊、托盘、主题和删除等纸片生命周期。它的 body 是 `AppState -> Todo PaperData[] -> PaperItem[]` 的只读投影：Notion 数据库风格的表格显示全部任务、状态、所属纸片、备注和时间；月历按创建时间到完成时间（未完成则到当天）的跨度投放任务。Board 自有持久化字段只包括普通纸片状态和 `BoardView` 视图偏好，不复制任务事实。
+`PaperTypes.Board` 是全局单例的纸片类型，使用普通 `PaperData` / `PaperWindow` shell，因此沿用显示、移动、尺寸、折叠胶囊、托盘、主题和删除等纸片生命周期。它的 body 是 `AppState -> Todo PaperData[] -> PaperItem[]` 的只读投影：Notion 数据库风格的表格显示全部任务、状态、所属纸片、备注和时间，支持跨显示字段的会话内即时搜索、排序菜单和列头双向排序；月历按创建时间到完成时间（未完成则到当天）的跨度投放任务。Board 自有持久化字段只包括普通纸片状态、`BoardView` 和 `BoardSort` 视图偏好，不复制任务事实；搜索词不持久化。
 
 看板中的行和日历任务只负责展开、聚焦 owning Todo `PaperWindow` 并定位原任务；实际编辑、撤销、保存和外部事件仍沿用原纸片边界。`AppController.MarkDirty` 调度现有 Board paper 刷新，不把看板变成新的 state authority。创建入口返回现存 Board paper，避免产生多个全局看板。
 

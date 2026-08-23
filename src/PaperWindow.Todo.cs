@@ -2365,6 +2365,12 @@ public sealed partial class PaperWindow
 
     private void OnWindowPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (HandleTodoBoardPreviewKeyDown(e))
+        {
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == Key.Escape &&
             Keyboard.Modifiers == ModifierKeys.None &&
             TryClearTodoSelectionFromEscape())

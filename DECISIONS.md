@@ -761,7 +761,7 @@ D-022 已确定任务事实继续属于 owning Todo paper、看板只做全局�
 
 ### Decision
 
-新增 `PaperTypes.Board`。它使用普通 `PaperData` / `PaperWindow` shell，参与纸片的显示、几何、折叠胶囊、托盘、主题、导出和删除生命周期；创建入口发现现有 Board 时直接打开该实例。Board body 提供表格与月历两种只读视图，`PaperData.BoardView` 只保存视图偏好。
+新增 `PaperTypes.Board`。它使用普通 `PaperData` / `PaperWindow` shell，参与纸片的显示、几何、折叠胶囊、托盘、主题、导出和删除生命周期；创建入口发现现有 Board 时直接打开该实例。Board body 提供表格与月历两种只读视图，`PaperData.BoardView` 与 `PaperData.BoardSort` 只保存视图偏好；表格搜索词只属于当前 UI 会话。
 
 Board 每次从 Todo `PaperData.Items` 生成投影。任务行和日历项只导航到 owning Todo paper，不在 Board 中保存或修改任务副本。Board 的 Markdown 导出也从相同 authoritative Todo 数据按纸片分组生成。
 
@@ -778,11 +778,11 @@ Board 每次从 Todo `PaperData.Items` 生成投影。任务行和日历项只�
 ### Consequences
 
 - 新的 paper-type 分支需要显式区分 Todo、Note 与 Board，不能把所有非 Note 类型默认当 Todo。
-- Board 的普通纸片状态和 `BoardView` 可写入 `data.json`；任务内容仍只由 owning Todo `PaperItem` 持有。
+- Board 的普通纸片状态、`BoardView` 和 `BoardSort` 可写入 `data.json`；任务内容仍只由 owning Todo `PaperItem` 持有。
 - 若未来允许看板内编辑，mutation 必须调用 owning paper 的既有命令、撤销、保存和事件边界。
 
 ### Evidence
 
-- `src/Models.cs` 的 `PaperTypes.Board`、`TodoBoardViews` 与 `PaperData.BoardView`。
+- `src/Models.cs` 的 `PaperTypes.Board`、`TodoBoardViews`、`TodoBoardSorts` 与对应 `PaperData` 视图偏好。
 - `src/PaperWindow.TodoBoard.cs` / `src/AppController.TodoBoard.cs`。
 - `src/PaperMarkdownExporter.cs` / `src/PaperWindow.Export.cs`。
