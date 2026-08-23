@@ -4,7 +4,7 @@
 
 **A few quiet, useful, unobtrusive pieces of paper on your desktop.**
 
-A minimal Windows desktop sticky-note app built with native WPF. No main window, no account, no manager.
+A minimal Windows desktop sticky-note app built with native WPF. No permanent main window, no account, and no management screen you must open first.
 
 ![version](https://img.shields.io/badge/version-v3.1-3b82f6) ![platform](https://img.shields.io/badge/platform-Windows%20x64-555) ![.NET](https://img.shields.io/badge/.NET-10-512bd4) ![UI](https://img.shields.io/badge/UI-WPF-0078d4)
 
@@ -37,9 +37,9 @@ A minimal Windows desktop sticky-note app built with native WPF. No main window,
 
 ## Philosophy
 
-- **Paper first** — Each paper is an independent window placed directly on the desktop, with no management screen to open first.
+- **Paper first** — Each paper is an independent window placed directly on the desktop; open the todo board only when you want a cross-paper view.
 - **Ready immediately** — Write when you need to, check things off when done; everything saves automatically.
-- **No management overhead** — No categories, tags, search, archive, sync, accounts, statistics, or reminders.
+- **No forced management overhead** — No required categories, tags, search, archive, sync, or accounts; the board is only a projection of existing papers.
 - **Native implementation** — Built with native WPF controls, not a web wrapper, with none of the complex permissions of MSIX packaging.
 - **Interaction first** — Lightweight is more than performance: workflows stay short, cognitive load stays low, and visual noise stays out of the way.
 
@@ -59,6 +59,9 @@ A minimal Windows desktop sticky-note app built with native WPF. No main window,
 - **Automatic edge docking** (on by default) — Folded capsules dock along screen edges. Multi-monitor layouts are supported, and a capsule can be dragged to another side or display.
 - **Script capsules** — Start a note with `!p` / `!power` to run its contents quickly as a PowerShell script.
 - **Link papers to todos** — Drag a note paper onto a todo item, then open the target paper directly; the link model also supports plugin bodies and other todo papers.
+- **Todo notes and timestamps** — Each todo can have a multiline note and automatically records its created and completed times.
+- **Task board paper** — Open the single global board paper from the tray, view every todo in a Notion-inspired database table or month calendar span, and navigate back to its source paper.
+- **Markdown export** — Export any paper as `.md`; todo exports include tasks, notes, and timestamps, while the board exports every task grouped by source paper.
 - **Note images** — Paste, drop, or choose local images from the menu.
 - **Local data** — Papers auto-save to `data.json` with a backup; note images are written incrementally and safely to a single `note-assets.lmdb` file.
 
@@ -113,8 +116,11 @@ Good for today's tasks, temporary items, and small desktop checklists.
 - **Visual size** — Choose Small / Medium / Large in settings.
 - **Undo / redo** — `Ctrl+Z` / `Ctrl+Y`
 - **Auto-clear completed** — Optional in settings; completed items are removed automatically when checked.
+- **Notes and timestamps** — Right-click a todo to add or edit its note and inspect created/completed times; completion time follows check and restore actions automatically.
 
 **Linked papers**: Drag a note paper from its title bar onto a todo item. The item then shows an entry for opening the target paper.
+
+**Export**: Right-click a paper and choose “Export as Markdown” to include every todo's check state, note, created time, and completed time.
 
 ---
 
@@ -186,13 +192,14 @@ The settings window has three pages: **Behavior / Visual / Shortcuts**. **Advanc
 
 ## Tray Entry
 
-PaperTodo has no main window. The tray icon is the only global entry point.
+PaperTodo has no permanent main window. The tray icon is the global entry point, and the todo board opens only when needed.
 
 ### Tray Actions
 
 - **Double-click tray icon** — Show and bring back all papers.
 - **Right-click tray icon** — Open the menu (version at the top).
 - **Settings** — Open the settings window.
+- **Task board** — Use the board icon in the tray header to open or recover the same movable, resizable, collapsible board paper with table and month-calendar views.
 - **List toolbar** — Toggle show/hide all papers; create a todo or note paper.
 - **Master capsule** — Right-click the master capsule at the top of an edge queue for the same menu as the tray.
 - **Delete paper** — Click `×` on a row, then Confirm or Cancel.

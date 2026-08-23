@@ -81,7 +81,9 @@ public enum TodoChangedFields
     Order = 1 << 2,
     Reminder = 1 << 3,
     LinkedPaper = 1 << 4,
-    LinkedPath = 1 << 5
+    LinkedPath = 1 << 5,
+    Note = 1 << 6,
+    Timestamps = 1 << 7
 }
 
 public sealed record PaperTodoEventMetadata(
@@ -109,7 +111,12 @@ public sealed record TodoSnapshot(
     int Order,
     string? LinkedPaperId,
     string? LinkedPath,
-    DateTimeOffset? ReminderAt);
+    DateTimeOffset? ReminderAt)
+{
+    public string Note { get; init; } = "";
+    public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset? CompletedAt { get; init; }
+}
 
 public sealed record NoteSnapshot(
     string PaperId,
@@ -174,6 +181,7 @@ public sealed class PaperTodoEventFilter
 public sealed record TodoCreateItem
 {
     public string Text { get; init; } = "";
+    public string Note { get; init; } = "";
     public bool Done { get; init; }
     public string? LinkedPaperId { get; init; }
     public DateTimeOffset? ReminderAt { get; init; }
@@ -199,6 +207,7 @@ public sealed record UpdateTodoRequest
     public string PaperId { get; init; } = "";
     public string TodoId { get; init; } = "";
     public string? Text { get; init; }
+    public string? Note { get; init; }
     public bool? Done { get; init; }
     public int? Order { get; init; }
     public bool UpdateLinkedPaper { get; init; }

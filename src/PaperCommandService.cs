@@ -26,9 +26,12 @@ internal sealed class PaperCommandService
     {
         EnsureRunning();
         _controller.PrepareExternalPaperOperation();
-        if (type != null && type is not PaperTypes.Todo and not PaperTypes.Note)
+        if (type != null &&
+            type is not PaperTypes.Todo and
+            not PaperTypes.Note and
+            not PaperTypes.Board)
         {
-            throw Error("invalid_params", "type must be 'todo' or 'note'.");
+            throw Error("invalid_params", "type must be 'todo', 'note', or 'board'.");
         }
 
         return _controller.State.Papers
@@ -216,13 +219,14 @@ internal sealed class PaperCommandService
         EnsureRunning();
         _controller.PrepareExternalPaperOperation();
         if (request.Text == null &&
+            request.Note == null &&
             !request.Done.HasValue &&
             !request.Order.HasValue &&
             !request.UpdateLinkedPaper)
         {
             throw Error(
                 "invalid_params",
-                "Provide text, done, order and/or updateLinkedPaper.");
+                "Provide text, note, done, order and/or updateLinkedPaper.");
         }
 
         var paper = RequirePaper(
@@ -238,6 +242,13 @@ internal sealed class PaperCommandService
                 PaperWindow.TodoTextMaxLength,
                 allowEmpty: true,
                 "text");
+        var note = request.Note == null
+            ? null
+            : RequiredText(
+                request.Note,
+                PaperWindow.TodoNoteMaxLength,
+                allowEmpty: true,
+                "note");
         var linkedPaperId = NormalizeLinkedPaperUpdate(request);
         var snapshot = TodoPaperSnapshot.Capture(paper);
 
@@ -252,9 +263,13 @@ internal sealed class PaperCommandService
                     item.ReminderTriggered = false;
                 }
             }
+            if (note != null)
+            {
+                item.Note = note;
+            }
             if (request.Done.HasValue)
             {
-                item.Done = request.Done.Value;
+                item.SetDone(request.Done.Value);
                 if (item.Done)
                 {
                     item.ReminderAt = null;
@@ -557,8 +572,10 @@ internal sealed class PaperCommandService
             var item = new PaperItem
             {
                 Text = input.Text,
+                Note = input.Note,
                 Done = input.Done,
                 Order = paper.Items.Count,
+                CompletedAt = input.Done ? DateTimeOffset.Now : null,
                 ReminderAt = input.Done ? null : input.ReminderAt
             };
             item.LinkPaper(linkedPaperId);
@@ -591,6 +608,11 @@ internal sealed class PaperCommandService
                 PaperWindow.TodoTextMaxLength,
                 allowEmpty: false,
                 "todo.text");
+            _ = RequiredText(
+                input.Note,
+                PaperWindow.TodoNoteMaxLength,
+                allowEmpty: true,
+                "todo.note");
             if (input.Done && input.ReminderAt.HasValue)
             {
                 throw Error(
@@ -808,6 +830,9 @@ internal sealed class PaperCommandService
         string Text,
         bool Done,
         int Order,
+        string Note,
+        DateTimeOffset CreatedAt,
+        DateTimeOffset? CompletedAt,
         string? LinkedPaperId,
         string? LinkedPath,
         DateTimeOffset? ReminderAt,
@@ -819,6 +844,9 @@ internal sealed class PaperCommandService
                 item.Text,
                 item.Done,
                 item.Order,
+                item.Note,
+                item.CreatedAt,
+                item.CompletedAt,
                 item.LinkedPaperId,
                 item.LinkedPath,
                 item.ReminderAt,
@@ -829,6 +857,9 @@ internal sealed class PaperCommandService
             Item.Text = Text;
             Item.Done = Done;
             Item.Order = Order;
+            Item.Note = Note;
+            Item.CreatedAt = CreatedAt;
+            Item.CompletedAt = CompletedAt;
             Item.RestoreQuickLaunch(LinkedPaperId, LinkedPath);
             Item.ReminderAt = ReminderAt;
             Item.ReminderTriggered = ReminderTriggered;

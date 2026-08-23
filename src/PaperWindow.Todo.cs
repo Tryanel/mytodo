@@ -14,6 +14,7 @@ namespace PaperTodo;
 public sealed partial class PaperWindow
 {
     internal const int TodoTextMaxLength = 5000;
+    internal const int TodoNoteMaxLength = 20_000;
     internal const int MaxPastedTodoLines = 200;
 
     private UIElement BuildTodoBody()
@@ -449,6 +450,7 @@ public sealed partial class PaperWindow
             _controller.State.ExperimentalTodoReminderShowButton;
         var showTodoReminderControl = todoRemindersEnabled &&
             (showTodoReminderButton || item.ReminderAt.HasValue);
+        var showTodoNoteIndicator = !string.IsNullOrWhiteSpace(item.Note);
 
         var row = new Border
         {
@@ -496,6 +498,12 @@ public sealed partial class PaperWindow
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         if (showTodoReminderControl)
         {
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        }
+        int? todoNoteColumn = null;
+        if (showTodoNoteIndicator)
+        {
+            todoNoteColumn = grid.ColumnDefinitions.Count;
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         }
         grid.ColumnDefinitions.Add(new ColumnDefinition
@@ -586,7 +594,7 @@ public sealed partial class PaperWindow
         check.Checked += (_, _) =>
         {
             PushUndoSnapshot();
-            item.Done = true;
+            item.SetDone(true);
             InvalidateEdgeCapsulePreviewContent();
             if (item.ReminderAt.HasValue || item.ReminderTriggered)
             {
@@ -628,7 +636,7 @@ public sealed partial class PaperWindow
         check.Unchecked += (_, _) =>
         {
             PushUndoSnapshot();
-            item.Done = false;
+            item.SetDone(false);
             InvalidateEdgeCapsulePreviewContent();
             if (reminderButton != null)
             {
@@ -676,6 +684,21 @@ public sealed partial class PaperWindow
             var itemMenu = CreateContextMenu();
             MenuItem? reminderMenu = null;
             itemMenu.Items.Add(MenuHeader(Strings.Get("MenuTodoItem")));
+            itemMenu.Items.Add(MenuItem(
+                Strings.Get(string.IsNullOrWhiteSpace(item.Note)
+                    ? "MenuAddTodoNote"
+                    : "MenuEditTodoNote"),
+                (_, _) => EditTodoNote(item)));
+            itemMenu.Items.Add(MenuHeader(Strings.Format(
+                "TodoCreatedAt",
+                FormatTodoTimestamp(item.CreatedAt))));
+            if (item.CompletedAt.HasValue)
+            {
+                itemMenu.Items.Add(MenuHeader(Strings.Format(
+                    "TodoCompletedAt",
+                    FormatTodoTimestamp(item.CompletedAt.Value))));
+            }
+            itemMenu.Items.Add(MenuSeparator());
             if (hasLinkedPaper)
             {
                 var openMenuText = runLinkedScriptOnClick
@@ -1000,6 +1023,14 @@ public sealed partial class PaperWindow
             grid.Children.Add(reminderHost);
         }
 
+        if (todoNoteColumn.HasValue)
+        {
+            var noteIndicator = BuildTodoNoteIndicator(item, metrics);
+            AttachItemContextMenu(noteIndicator);
+            Grid.SetColumn(noteIndicator, todoNoteColumn.Value);
+            grid.Children.Add(noteIndicator);
+        }
+
         var handleGlyph = new TextBlock
         {
             Text = "≡",
@@ -1049,7 +1080,7 @@ public sealed partial class PaperWindow
         };
         AttachItemContextMenu(handle);
 
-        Grid.SetColumn(handle, showTodoReminderControl ? 4 : 3);
+        Grid.SetColumn(handle, grid.ColumnDefinitions.Count - 1);
         grid.Children.Add(handle);
 
         row.Child = grid;
@@ -2351,7 +2382,7 @@ public sealed partial class PaperWindow
             return;
         }
 
-        if (_paper.Type == PaperTypes.Note)
+        if (_paper.Type != PaperTypes.Todo)
         {
             return;
         }

@@ -202,7 +202,7 @@ public sealed partial class AppController
             "",
             "## Workflow",
             "- Call `list_papers` first when a paper id is unknown.",
-            "- Call `get_paper` before replacing existing todo text, completion state, or note content.",
+            "- Call `get_paper` before replacing existing todo text, todo note, completion state, or note-paper content.",
             "- Prefer additive operations (`create_todo_paper`, `create_note`, `add_todos`) when they satisfy the request.",
             "- Use `update_todo`, `write_note`, `set_todo_reminder`, and delete tools only when the requested mutation requires them.",
             "- Preserve the user's existing paper structure unless the user explicitly asks to reorganize it.",

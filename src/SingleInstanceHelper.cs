@@ -1,6 +1,8 @@
 using System;
 using System.IO;
 using System.IO.Pipes;
+using System.Security.Cryptography;
+using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -20,6 +22,27 @@ public sealed class SingleInstanceHelper : IDisposable
     private bool _ownsMutex;
     private CancellationTokenSource? _listenerCts;
     private bool _disposed;
+
+    public static string CurrentUserScope()
+    {
+        string identity;
+        try
+        {
+            identity = WindowsIdentity.GetCurrent().User?.Value ?? "";
+        }
+        catch
+        {
+            identity = "";
+        }
+
+        if (string.IsNullOrWhiteSpace(identity))
+        {
+            identity = $"{Environment.UserDomainName}\\{Environment.UserName}";
+        }
+
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(identity));
+        return Convert.ToHexString(hash.AsSpan(0, 12));
+    }
 
     public SingleInstanceHelper(string mutexName, string pipeName)
     {

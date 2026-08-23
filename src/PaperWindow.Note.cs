@@ -1094,7 +1094,12 @@ public sealed partial class PaperWindow
             return "⚡";
         }
 
-        return _paper.Type == PaperTypes.Note ? "✎" : "✓";
+        return _paper.Type switch
+        {
+            PaperTypes.Note => "✎",
+            PaperTypes.Board => "▦",
+            _ => "✓"
+        };
     }
 
     private double CapsuleIconFontSizeForCurrentPaper()

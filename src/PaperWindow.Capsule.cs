@@ -782,6 +782,10 @@ public sealed partial class PaperWindow
             {
                 RebuildTodoRows();
             }
+            else if (_paper.Type == PaperTypes.Board)
+            {
+                RefreshTodoBoardForExternalChange();
+            }
         }
 
         // Shadow/margin/corner selection is form-aware and snap-aware; centralize it so a

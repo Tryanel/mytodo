@@ -1599,6 +1599,10 @@ public sealed partial class PaperWindow : Window
         {
             NotifyCurrentPaperBodyThemeChanged();
         }
+        else if (_paper.Type == PaperTypes.Board)
+        {
+            RebuildTodoBoardPresentation();
+        }
         else
         {
             RebuildTodoRows(CurrentFocusedTodoItemId());
@@ -1681,6 +1685,10 @@ public sealed partial class PaperWindow : Window
         if (_paper.Type == PaperTypes.Todo)
         {
             RebuildTodoRows(CurrentFocusedTodoItemId());
+        }
+        else if (_paper.Type == PaperTypes.Board)
+        {
+            RebuildTodoBoardPresentation();
         }
 
         if (_capsuleIconText != null)
@@ -2507,9 +2515,12 @@ public sealed partial class PaperWindow : Window
 
     private void BuildBody()
     {
-        UIElement body = _paper.Type == PaperTypes.Note
-            ? CreateAndAttachInitialPaperBody()
-            : BuildTodoBody();
+        UIElement body = _paper.Type switch
+        {
+            PaperTypes.Note => CreateAndAttachInitialPaperBody(),
+            PaperTypes.Board => BuildTodoBoardBody(),
+            _ => BuildTodoBody()
+        };
         Grid.SetRow(body, 1);
         _shell.Children.Add(body);
 
@@ -2597,6 +2608,10 @@ public sealed partial class PaperWindow : Window
                     (_, _) => OpenMarkdownInDefaultEditor()));
             }
         }
+
+        menu.Items.Add(MenuItem(
+            Strings.Get("MenuExportMarkdown"),
+            (_, _) => ExportPaperAsMarkdown()));
 
         if (CanDisplayAsCapsule())
         {

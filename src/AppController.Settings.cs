@@ -84,7 +84,6 @@ public sealed partial class AppController
             window.UpdateTheme();
         }
         foreach (var m in _masterCapsules.Values) m.UpdateTheme();
-
         RebuildTrayMenu();
         RefreshSettingsWindowContent();
     }

@@ -744,7 +744,7 @@ public sealed partial class PaperWindow
 
         foreach (var item in selected)
         {
-            item.Done = done;
+            item.SetDone(done);
             if (done)
             {
                 item.ReminderAt = null;

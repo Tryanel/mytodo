@@ -7,6 +7,14 @@ public static class PaperTypes
 {
     public const string Todo = "todo";
     public const string Note = "note";
+    public const string Board = "board";
+
+    public static string Normalize(string? type) => type switch
+    {
+        Note => Note,
+        Board => Board,
+        _ => Todo
+    };
 }
 
 public static class PaperLayoutDefaults
@@ -23,6 +31,34 @@ public static class PaperLayoutDefaults
 
     public const double NoteDefaultWidth = 320;
     public const double NoteDefaultHeight = 360;
+
+    public const double BoardDefaultWidth = 960;
+    public const double BoardDefaultHeight = 680;
+
+    public static double DefaultWidth(string? paperType) =>
+        PaperTypes.Normalize(paperType) switch
+        {
+            PaperTypes.Note => NoteDefaultWidth,
+            PaperTypes.Board => BoardDefaultWidth,
+            _ => TodoDefaultWidth
+        };
+
+    public static double DefaultHeight(string? paperType) =>
+        PaperTypes.Normalize(paperType) switch
+        {
+            PaperTypes.Note => NoteDefaultHeight,
+            PaperTypes.Board => BoardDefaultHeight,
+            _ => TodoDefaultHeight
+        };
+}
+
+public static class TodoBoardViews
+{
+    public const string Table = "table";
+    public const string Calendar = "calendar";
+
+    public static string Normalize(string? view) =>
+        view == Calendar ? Calendar : Table;
 }
 
 public static class MarkdownRenderModes
@@ -538,6 +574,7 @@ public sealed class PaperData
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public string Type { get; set; } = PaperTypes.Todo;
     public string Title { get; set; } = "";
+    public string BoardView { get; set; } = TodoBoardViews.Table;
 
     public double X { get; set; } = 120;
     public double Y { get; set; } = 120;
@@ -597,8 +634,14 @@ public sealed class PaperItem
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public string Text { get; set; } = "";
+    public string Note { get; set; } = "";
     public bool Done { get; set; }
     public int Order { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTimeOffset? CompletedAt { get; set; }
 
     [JsonInclude]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -630,6 +673,14 @@ public sealed class PaperItem
     {
         LinkedPaperId = null;
         LinkedPath = null;
+    }
+
+    public void SetDone(bool done, DateTimeOffset? changedAt = null)
+    {
+        Done = done;
+        CompletedAt = done
+            ? CompletedAt ?? changedAt ?? DateTimeOffset.Now
+            : null;
     }
 
     internal void RestoreQuickLaunch(string? paperId, string? path)

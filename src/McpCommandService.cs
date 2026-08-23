@@ -179,16 +179,35 @@ internal sealed class McpCommandService
         var before = RequireTodo(paperId, todoId);
 
         var hasText = parameters.TryGetProperty("text", out var textValue);
+        var hasNote = parameters.TryGetProperty("note", out var noteValue);
         var hasDone = parameters.TryGetProperty("done", out var doneValue);
         var hasOrder = parameters.TryGetProperty("order", out var orderValue);
         var hasLinkedPaper = parameters.TryGetProperty(
             "linked_paper_id",
             out var linkedPaperValue);
-        if (!hasText && !hasDone && !hasOrder && !hasLinkedPaper)
+        if (!hasText && !hasNote && !hasDone && !hasOrder && !hasLinkedPaper)
         {
             throw new McpApiException(
                 "invalid_params",
-                "Provide text, done, order and/or linked_paper_id.");
+                "Provide text, note, done, order and/or linked_paper_id.");
+        }
+
+        string? note = null;
+        if (hasNote)
+        {
+            note = RequiredStringValue(
+                noteValue,
+                "note",
+                PaperWindow.TodoNoteMaxLength,
+                allowEmpty: true);
+            if (string.IsNullOrWhiteSpace(before.Note))
+            {
+                RequireAdditiveWrites();
+            }
+            else if (!string.Equals(before.Note, note, StringComparison.Ordinal))
+            {
+                RequireFullWrites();
+            }
         }
 
         string? text = null;
@@ -244,6 +263,7 @@ internal sealed class McpCommandService
                 PaperId = paperId,
                 TodoId = todoId,
                 Text = hasText ? text : null,
+                Note = hasNote ? note : null,
                 Done = done,
                 Order = order,
                 UpdateLinkedPaper = hasLinkedPaper,
@@ -357,6 +377,20 @@ internal sealed class McpCommandService
 
     private object PaperDetails(PaperSnapshot paper)
     {
+        if (paper.Type == PaperTypes.Board)
+        {
+            var model = RequirePaper(paper.Id);
+            return new
+            {
+                id = paper.Id,
+                type = paper.Type,
+                title = paper.Title,
+                is_visible = paper.IsVisible,
+                board_view = TodoBoardViews.Normalize(model.BoardView),
+                task_count = _commands.ListTodos(includeBlank: false).Count
+            };
+        }
+
         if (paper.Type == PaperTypes.Note)
         {
             var model = RequirePaper(paper.Id);
@@ -404,11 +438,14 @@ internal sealed class McpCommandService
     {
         id = item.Id,
         text = item.Text,
+        note = item.Note,
         done = item.Done,
         order = item.Order,
         linked_paper_id = item.LinkedPaperId,
         linked_path = item.LinkedPath,
-        reminder_at = item.ReminderAt?.ToString("O", CultureInfo.InvariantCulture)
+        reminder_at = item.ReminderAt?.ToString("O", CultureInfo.InvariantCulture),
+        created_at = item.CreatedAt.ToString("O", CultureInfo.InvariantCulture),
+        completed_at = item.CompletedAt?.ToString("O", CultureInfo.InvariantCulture)
     };
 
     private PaperData RequirePaper(string paperId) =>
@@ -477,6 +514,11 @@ internal sealed class McpCommandService
                 "text",
                 PaperWindow.TodoTextMaxLength);
             var done = OptionalBoolean(value, "done") ?? false;
+            var note = OptionalString(
+                value,
+                "note",
+                PaperWindow.TodoNoteMaxLength,
+                allowEmpty: true) ?? "";
             var linkedPaperId = OptionalString(value, "linked_paper_id", 64);
             DateTimeOffset? reminderAt = null;
             if (value.TryGetProperty("reminder_at", out var reminderValue) &&
@@ -490,6 +532,7 @@ internal sealed class McpCommandService
             result.Add(new TodoCreateItem
             {
                 Text = text,
+                Note = note,
                 Done = done,
                 LinkedPaperId = linkedPaperId,
                 ReminderAt = reminderAt

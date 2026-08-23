@@ -71,7 +71,10 @@ public partial class App : Application
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
 
-        _singleInstance = new SingleInstanceHelper("PaperTodo-SingleInstance-Mutex", "PaperTodo-SingleInstance-Activate");
+        var userScope = SingleInstanceHelper.CurrentUserScope();
+        _singleInstance = new SingleInstanceHelper(
+            $"PaperTodo-SingleInstance-Mutex-{userScope}",
+            $"PaperTodo-SingleInstance-Activate-{userScope}");
         if (!_singleInstance.TryAcquire())
         {
             _singleInstance.SignalPrimaryInstance(e.Args);

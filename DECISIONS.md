@@ -13,7 +13,7 @@
 
 | ID | 主题 | Status | 领域 |
 | --- | --- | --- | --- |
-| D-001 | “桌面纸片”作为主要交互和对象边界 | Accepted | 产品边界 |
+| D-001 | “桌面纸片”作为主要交互和对象边界 | Superseded by D-023 | 产品边界 |
 | D-002 | `data.json` 与 LMDB 分域 | Accepted | 持久化 |
 | D-003 | Crash boundary 不做强制最终保存 | Accepted | 持久化 / 恢复 |
 | D-004 | Paper body 通过 session 边界接入 | Accepted | 插件 |
@@ -34,6 +34,8 @@
 | D-019 | Note 编辑与浏览共享 `MarkdownTextBox` | Accepted | Note |
 | D-020 | 插件状态与核心 `data.json` 分域持久化 | Accepted | 插件 / 持久化 |
 | D-021 | 插件与 MCP 共用 `PaperCommandService` | Accepted | 外部命令 / 一致性 |
+| D-022 | 纸片持有任务，全局看板只做聚合投影 | Superseded by D-023 | 产品边界 / Todo |
+| D-023 | 全局看板成为单例 Board paper | Accepted | 产品边界 / Todo / UI |
 
 ## 维护规则
 
@@ -60,7 +62,7 @@ Decisions 的核心问题是：**“为什么今天会这样设计，以及哪�
 
 ## D-001 — 保持“桌面纸片”作为主要交互和对象边界
 
-**Status:** Accepted
+**Status:** Superseded by D-023
 
 ### Decision
 
@@ -707,3 +709,80 @@ MCP transport 继续拥有 JSON/MCP 参数映射和 MCP 授权；plugin host 继
 - `src/PaperBodyPluginHostApi.cs`：只做 plugin permission/session 边界，并把业务读写委托给同一 service。
 - `16cfdb76672390df28a8445937f994af0a0cdc2f` — `feat: add reviewed MCP architecture`，形成最初外部命令事务边界。
 - `a7dc481f2a5c6dfe95de51a5cfc2eb01f97cb69d` — plugin v2 / MCP hardening，收敛外部写入失败与恢复语义。
+
+---
+
+## D-022 — 纸片持有任务，全局看板只做聚合投影
+
+**Status:** Superseded by D-023
+
+### Context
+
+原有产品边界要求新增能力优先落在桌面纸片上，并明确没有新产品决策时不自行扩展中心式任务管理器。现在用户明确需要跨纸片查看所有待办，并在日历中按创建到完成的时间跨度查看甘特图；同时仍要求每张纸独立导出、每条任务的备注和时间随原任务保存。
+
+### Decision
+
+继续由 `PaperData.Items` / `PaperItem` 持有任务、备注、创建时间和完成时间；新增 `TodoBoardWindow` 作为全局只读聚合投影，提供任务列表、日历甘特和回到原纸片的定位入口。看板不保存任务副本、不建立独立排序/完成状态协议，也不取代 `PaperWindow` 的编辑和撤销边界。
+
+每张纸可以导出独立 Markdown 快照。导出文件是面向用户的可携带结果，不作为 PaperTodo 的回读状态或另一套持久化来源。
+
+### Why
+
+跨纸片视图解决的是“观察和定位全部任务”，不要求把既有多纸片模型迁移成中心数据库。让看板每次从 authoritative `AppState` 生成投影，可保留纸片、关联、插件、胶囊和既有保存语义，同时满足全局查看需求；导出保持单向快照，则不会让外部文件与 `data.json` 形成双主冲突。
+
+### Rejected / Do not reintroduce
+
+- 不在看板维护第二份待办集合、完成状态或时间字段。
+- 不让导出的 Markdown 反向成为自动同步或覆盖 `data.json` 的 authoritative source。
+- 不因存在全局看板就把普通 Todo 编辑、撤销和纸片生命周期整体吸入新的中心窗口。
+
+### Consequences
+
+- 后续看板编辑能力若增加，必须回到 owning `PaperItem` 及现有保存/事件边界，而不是只修改视图行。
+- 纸片仍是任务写入和生命周期边界；看板成为明确允许的应用级查看/导航入口。
+- `PaperItem` 新字段属于核心 `data.json` 协议，删除或改名需继续提供旧数据兼容。
+
+### Evidence
+
+- `src/Models.cs` 的 `PaperItem` 与 `SetDone`。
+- `src/StateStore.cs` 的旧数据时间补齐与状态规范化。
+- `src/TodoBoardWindow.cs` / `src/AppController.TodoBoard.cs`。
+- `src/PaperMarkdownExporter.cs` / `src/PaperWindow.Export.cs`。
+
+---
+
+## D-023 — 全局看板成为单例 Board paper
+
+**Status:** Accepted
+
+### Context
+
+D-022 已确定任务事实继续属于 owning Todo paper、看板只做全局投影。用户进一步明确：任务看板本身也应是一种纸片，视觉参考 Notion 的数据库表格与日历；同时选择全局只保留一个看板，并保持只读查看和回到原纸片编辑。
+
+### Decision
+
+新增 `PaperTypes.Board`。它使用普通 `PaperData` / `PaperWindow` shell，参与纸片的显示、几何、折叠胶囊、托盘、主题、导出和删除生命周期；创建入口发现现有 Board 时直接打开该实例。Board body 提供表格与月历两种只读视图，`PaperData.BoardView` 只保存视图偏好。
+
+Board 每次从 Todo `PaperData.Items` 生成投影。任务行和日历项只导航到 owning Todo paper，不在 Board 中保存或修改任务副本。Board 的 Markdown 导出也从相同 authoritative Todo 数据按纸片分组生成。
+
+### Why
+
+把看板收进现有 paper shell，能让它和产品的核心空间模型一致，并复用已经成熟的窗口、胶囊、主题与本地持久化边界。单例避免多个“全局视角”造成含义混乱；只读导航则明确保留 Todo paper 的编辑、撤销和事件 authority。Notion 只作为信息层级与表格/月历密度的参考，不引入 Web 工作区外壳或中心式数据库。
+
+### Rejected / Do not reintroduce
+
+- 不再维护独立的 `TodoBoardWindow` 生命周期或第二套窗口入口。
+- 不在 Board paper 的 `Items`、表格行或日历项中复制 authoritative 任务状态。
+- 不因 Board 是 paper 就允许通用 Todo 编辑路径把它当作普通待办纸。
+
+### Consequences
+
+- 新的 paper-type 分支需要显式区分 Todo、Note 与 Board，不能把所有非 Note 类型默认当 Todo。
+- Board 的普通纸片状态和 `BoardView` 可写入 `data.json`；任务内容仍只由 owning Todo `PaperItem` 持有。
+- 若未来允许看板内编辑，mutation 必须调用 owning paper 的既有命令、撤销、保存和事件边界。
+
+### Evidence
+
+- `src/Models.cs` 的 `PaperTypes.Board`、`TodoBoardViews` 与 `PaperData.BoardView`。
+- `src/PaperWindow.TodoBoard.cs` / `src/AppController.TodoBoard.cs`。
+- `src/PaperMarkdownExporter.cs` / `src/PaperWindow.Export.cs`。

@@ -10,7 +10,7 @@
 
 PaperTodo 是 Windows 桌面“纸片”应用。当前技术路线围绕几个长期方向组织：
 
-- **paper 是主要对象和交互边界。** Todo、Markdown/Note、插件正文和 Edge Capsule 都围绕 `PaperData` / `PaperWindow` 组合；应用级能力由 `AppController` 协调，而不是默认把所有行为收束成一个中心主界面。
+- **paper 是主要写入对象和交互边界，全局视图是投影。** Todo、Markdown/Note、任务看板、插件正文和 Edge Capsule 都围绕 `PaperData` / `PaperWindow` 组合；全局单例 Board paper 可以聚合查看所有待办并导航回原纸片，但不拥有第二份任务状态或独立 mutation 规则。
 - **每个职责尽量只有一个 authority。** 状态、几何、队列 placement、presentation、持久化和外部 mutation 不各自复制第二套“近似真相”。
 - **复杂 UI 状态优先走显式状态与单通道 reconcile。** Edge Capsule 使用 Intent → Reducer → Presenter；窗口和 controller 不通过并行 bool/临时 setter 绕过它。
 - **WPF 是主 UI / shape owner，native/DirectComposition 只承担确有必要的 Windows 边界能力。** 不把 compositor 扩成第二套 UI renderer。
@@ -42,7 +42,7 @@ PaperTodo.exe
         ├─ PaperBodyPluginRegistry / PaperBodyPluginDataStore
         ├─ PaperCommandService
         ├─ PaperWindow[paperId]
-        │   ├─ paper shell / Todo / built-in Note
+        │   ├─ paper shell / Todo / built-in Note / Board projection
         │   ├─ PaperBodyHost
         │   └─ EdgeCapsulePresenter + EdgeCapsuleHost
         ├─ MasterCapsuleWindow[queue]
@@ -63,6 +63,7 @@ PaperTodo.exe
 | 插件状态 | `PaperBodyPluginDataStore` | provider settings 与 per-paper plugin state 的独立保存/恢复 |
 | 外部 Paper/Todo/Note 命令 | `PaperCommandService` | 插件/MCP 共用的验证、mutation、同步提交/回滚和事件发布 |
 | 单纸片 UI | `PaperWindow` | paper WPF shell、普通交互、provider 选择、子系统适配 |
+| 全局 Todo 投影 | Board 类型的 `PaperWindow` body + `AppController` | 单例 Board paper 从 `State.Papers[].Items` 生成表格/月历跨度视图，并导航回 owning Todo `PaperWindow`；只持有自身纸片生命周期和视图偏好，不保存任务副本 |
 | paper-body session | `PaperBodyHost` | 当前 `IPaperBodySession` 的 attach / invoke / commit / dispose |
 | 插件发现与合同 | `PaperBodyPluginRegistry` | builtin / Native / Web provider 发现、校验、激活 |
 | Edge 单纸片业务状态 | `EdgeCapsuleReducer` + `EdgeCapsuleModel` | 单纸片 typed intent 到完整 model 的原子变化 |
@@ -79,7 +80,7 @@ PaperTodo.exe
 
 ### 3.1 GUI 单实例
 
-正常 GUI 启动使用 `SingleInstanceHelper` 的 Mutex + named pipe。只有主 GUI 实例建立 `AppController`；后续 GUI 启动只把参数转发给主实例后退出。
+正常 GUI 启动使用按当前 Windows 用户 SID 隔离命名的 `SingleInstanceHelper` Mutex + named pipe。每个 Windows 用户只有一个主 GUI 实例建立 `AppController`；同一用户的后续 GUI 启动只把参数转发给主实例后退出，不会被其他账户或受限运行身份启动的实例静默拦截。
 
 `AppController` 尚未完成启动时收到的单实例命令先排队，待 controller 可用后再执行。普通纸片窗口全部关闭不等于退出应用，进程使用显式 shutdown 生命周期。
 
@@ -109,7 +110,7 @@ Web 插件使用 WebView2 runtime；脚本胶囊可以启动 PowerShell 子进�
 
 ### 4.2 核心状态
 
-`AppState` 是核心持久化根；`PaperData` 是单纸片模型；Todo 行使用 `PaperItem`。
+`AppState` 是核心持久化根；`PaperData` 是单纸片模型；Todo 行使用 `PaperItem`。每条 Todo 的正文、可选备注、创建时间、完成状态和完成时间都随 `PaperItem` 进入 `data.json`；从旧数据加载时，`StateStore` 为缺失时间做兼容补齐，之后所有完成/恢复操作通过 `PaperItem.SetDone` 同步维护完成时间。
 
 删除、隐藏、折叠是不同语义：
 
@@ -181,6 +182,14 @@ transport 权限、Web/Native surface 生命周期和 MCP protocol 不下沉到 
 - 没有专属能力时由宿主降级到 capsule/plain text。
 
 具体 fallback 次序、尺寸和 ready 时序属于当前 contract/代码实现；为什么形成这些边界见 D-018。
+
+### 5.5 Todo 全局投影与纸片导出
+
+`PaperTypes.Board` 是全局单例的纸片类型，使用普通 `PaperData` / `PaperWindow` shell，因此沿用显示、移动、尺寸、折叠胶囊、托盘、主题和删除等纸片生命周期。它的 body 是 `AppState -> Todo PaperData[] -> PaperItem[]` 的只读投影：Notion 数据库风格的表格显示全部任务、状态、所属纸片、备注和时间；月历按创建时间到完成时间（未完成则到当天）的跨度投放任务。Board 自有持久化字段只包括普通纸片状态和 `BoardView` 视图偏好，不复制任务事实。
+
+看板中的行和日历任务只负责展开、聚焦 owning Todo `PaperWindow` 并定位原任务；实际编辑、撤销、保存和外部事件仍沿用原纸片边界。`AppController.MarkDirty` 调度现有 Board paper 刷新，不把看板变成新的 state authority。创建入口返回现存 Board paper，避免产生多个全局看板。
+
+纸张 Markdown 导出由 `PaperMarkdownExporter` 从 authoritative 状态生成文件。Todo 导出包括勾选状态、备注、创建时间和完成时间；Note 导出当前正文；Board 导出按 owning Todo paper 分组的全局任务投影。导出是显式文件快照，不参与 `StateStore` 的主状态写入，也不成为可回读的第二份 authoritative 数据。
 
 ## 6. Edge Capsule V3 Lite
 

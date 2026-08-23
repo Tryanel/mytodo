@@ -8,6 +8,7 @@ internal static class TodoRules
 {
     public static bool HasMeaningfulContent(PaperItem item) =>
         !string.IsNullOrWhiteSpace(item.Text) ||
+        !string.IsNullOrWhiteSpace(item.Note) ||
         item.Done ||
         item.ReminderAt.HasValue ||
         item.ReminderTriggered ||
@@ -15,6 +16,7 @@ internal static class TodoRules
         !string.IsNullOrWhiteSpace(item.LinkedPath);
 
     public static bool HasNonTextContent(PaperItem item) =>
+        !string.IsNullOrWhiteSpace(item.Note) ||
         item.Done ||
         item.ReminderAt.HasValue ||
         item.ReminderTriggered ||
@@ -29,8 +31,11 @@ internal static class TodoRules
         {
             Id = item.Id,
             Text = item.Text,
+            Note = item.Note,
             Done = item.Done,
             Order = item.Order,
+            CreatedAt = item.CreatedAt,
+            CompletedAt = item.CompletedAt,
             ReminderAt = item.ReminderAt,
             ReminderTriggered = item.ReminderTriggered
         };

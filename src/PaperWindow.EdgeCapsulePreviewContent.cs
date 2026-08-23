@@ -39,7 +39,7 @@ public sealed partial class PaperWindow
 
         var focusedId = CurrentFocusedTodoItemId();
         PushUndoSnapshot();
-        item.Done = done;
+        item.SetDone(done);
         InvalidateEdgeCapsulePreviewContent();
 
         if (done && (item.ReminderAt.HasValue || item.ReminderTriggered))
@@ -103,6 +103,19 @@ public sealed partial class PaperWindow
 
     private string CurrentPluginStatusForEdgeCapsulePreview()
     {
+        if (_paper.Type == PaperTypes.Board)
+        {
+            var items = _controller.State.Papers
+                .Where(paper => paper.Type == PaperTypes.Todo)
+                .SelectMany(paper => paper.Items)
+                .Where(item => !TodoRules.IsPlaceholder(item))
+                .ToList();
+            return Strings.Format(
+                "TodoBoardCapsuleSummary",
+                items.Count(item => !item.Done),
+                items.Count);
+        }
+
         if (_pluginCapsulePresentation != null &&
             !IsCurrentBodyProviderMarkdown &&
             !_bodyFailed)

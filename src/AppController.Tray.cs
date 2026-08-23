@@ -619,6 +619,7 @@ public sealed partial class AppController
         };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         KeyboardNavigation.SetTabNavigation(grid, KeyboardNavigationMode.Cycle);
 
         var label = new TextBlock
@@ -637,10 +638,17 @@ public sealed partial class AppController
             CreateTraySettingsIcon(),
             settingsTip,
             ShowSettingsWindow);
+        var boardButton = TrayToolbarAction(
+            menu,
+            CreateTrayTodoBoardIcon(),
+            Strings.Get("TrayTodoBoard"),
+            OpenTodoBoardPaper);
 
         Grid.SetColumn(label, 0);
-        Grid.SetColumn(settingsButton, 1);
+        Grid.SetColumn(boardButton, 1);
+        Grid.SetColumn(settingsButton, 2);
         grid.Children.Add(label);
+        grid.Children.Add(boardButton);
         grid.Children.Add(settingsButton);
 
         item.Header = grid;
@@ -840,6 +848,20 @@ public sealed partial class AppController
             StrokeThickness = 1.2,
             StrokeLineJoin = PenLineJoin.Round,
             Fill = Brushes.Transparent,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+    }
+
+    private FrameworkElement CreateTrayTodoBoardIcon()
+    {
+        return new TextBlock
+        {
+            Text = "▦",
+            Foreground = TrayTextBrush,
+            FontFamily = AppTypography.SymbolFontFamily,
+            FontSize = AppTypography.Scale(15),
+            FontWeight = FontWeights.SemiBold,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -1248,7 +1270,12 @@ public sealed partial class AppController
             return "⚡";
         }
 
-        return paper.Type == PaperTypes.Note ? "✎" : "✓";
+        return paper.Type switch
+        {
+            PaperTypes.Note => "✎",
+            PaperTypes.Board => "▦",
+            _ => "✓"
+        };
     }
 
     private double PaperTypeIconFontSize(PaperData paper)

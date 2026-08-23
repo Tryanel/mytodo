@@ -242,9 +242,12 @@ internal sealed class PaperBodyPluginHostApi : IPaperTodoHostApi, IDisposable
         {
             PaperTitle = canReadPapers ? value.PaperTitle : "",
             Text = canReadTodos ? value.Text : "",
+            Note = canReadTodos ? value.Note : "",
             LinkedPaperId = canReadTodos ? value.LinkedPaperId : null,
             LinkedPath = canReadTodos ? value.LinkedPath : null,
-            ReminderAt = canReadTodos ? value.ReminderAt : null
+            ReminderAt = canReadTodos ? value.ReminderAt : null,
+            CreatedAt = canReadTodos ? value.CreatedAt : default,
+            CompletedAt = canReadTodos ? value.CompletedAt : null
         };
 
     private T Invoke<T>(Func<T> action)

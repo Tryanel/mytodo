@@ -22,7 +22,7 @@ internal sealed class McpTools
         OpenWorld = false)]
     [Description("List PaperTodo papers and compact metadata. Use this first to discover paper IDs.")]
     public Task<JsonElement> ListPapers(
-        [Description("Optional filter: 'todo' or 'note'.")] string? type = null,
+        [Description("Optional filter: 'todo', 'note', or the read-only global 'board' paper.")] string? type = null,
         CancellationToken cancellationToken = default)
         => _client.InvokeAsync(
             "list_papers",
@@ -34,7 +34,7 @@ internal sealed class McpTools
         ReadOnly = true,
         Destructive = false,
         OpenWorld = false)]
-    [Description("Read one PaperTodo paper in full, including ordered todos or note content.")]
+    [Description("Read one PaperTodo paper in full, including ordered todos, note content, or board projection metadata.")]
     public Task<JsonElement> GetPaper(
         [Description("Exact paper ID returned by list_papers.")] string paper_id,
         CancellationToken cancellationToken = default)
@@ -96,16 +96,17 @@ internal sealed class McpTools
         Destructive = true,
         Idempotent = true,
         OpenWorld = false)]
-    [Description("Fill or replace todo text and/or change completion state. Filling blank text needs additive writes; replacing existing text or state needs full writes.")]
+    [Description("Fill or replace todo text or note and/or change completion state. Filling a blank field needs additive writes; replacing existing content or state needs full writes.")]
     public Task<JsonElement> UpdateTodo(
         [Description("Exact todo paper ID.")] string paper_id,
         [Description("Exact todo item ID.")] string todo_id,
         [Description("Replacement text. Omit to keep text unchanged.")] string? text = null,
+        [Description("Replacement todo note. Omit to keep it unchanged; use an empty string to clear it.")] string? note = null,
         [Description("Replacement completion state. Omit to keep it unchanged.")] bool? done = null,
         CancellationToken cancellationToken = default)
         => _client.InvokeAsync(
             "update_todo",
-            OptionalUpdateParameters(paper_id, todo_id, text, done),
+            OptionalUpdateParameters(paper_id, todo_id, text, note, done),
             cancellationToken);
 
     [McpServerTool(
@@ -176,6 +177,7 @@ internal sealed class McpTools
         string paperId,
         string todoId,
         string? text,
+        string? note,
         bool? done)
     {
         var parameters = new Dictionary<string, object?>
@@ -186,6 +188,10 @@ internal sealed class McpTools
         if (text != null)
         {
             parameters["text"] = text;
+        }
+        if (note != null)
+        {
+            parameters["note"] = note;
         }
         if (done.HasValue)
         {
@@ -200,6 +206,10 @@ internal sealed record McpTodoInput
     [JsonPropertyName("text")]
     [Description("Todo text. Uses the same length limit as PaperTodo's normal editor.")]
     public required string Text { get; init; }
+
+    [JsonPropertyName("note")]
+    [Description("Optional multiline todo note.")]
+    public string? Note { get; init; }
 
     [JsonPropertyName("done")]
     [Description("Whether the todo starts completed. Setting true requires PaperTodo full writes.")]

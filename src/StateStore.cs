@@ -367,6 +367,8 @@ public sealed class StateStore
             paper.Items ??= new List<PaperItem>();
             RemoveNullEntriesInPlace(paper.Items);
 
+            paper.Type = PaperTypes.Normalize(paper.Type);
+            paper.BoardView = TodoBoardViews.Normalize(paper.BoardView);
             paper.Content ??= "";
             paper.X = NormalizeCoordinate(paper.X, 120);
             paper.Y = NormalizeCoordinate(paper.Y, 120);
@@ -375,12 +377,8 @@ public sealed class StateStore
                 paper.TextZoom = 1.0;
             }
 
-            var defaultWidth = paper.Type == PaperTypes.Note
-                ? PaperLayoutDefaults.NoteDefaultWidth
-                : PaperLayoutDefaults.TodoDefaultWidth;
-            var defaultHeight = paper.Type == PaperTypes.Note
-                ? PaperLayoutDefaults.NoteDefaultHeight
-                : PaperLayoutDefaults.TodoDefaultHeight;
+            var defaultWidth = PaperLayoutDefaults.DefaultWidth(paper.Type);
+            var defaultHeight = PaperLayoutDefaults.DefaultHeight(paper.Type);
             if (!IsFinite(paper.Width))
             {
                 paper.Width = defaultWidth;
@@ -401,6 +399,7 @@ public sealed class StateStore
             foreach (var item in paper.Items)
             {
                 item.Text ??= "";
+                item.Note ??= "";
             }
         }
     }
@@ -591,10 +590,8 @@ public sealed class StateStore
                 paper.Id = NewUniqueId(usedPaperIds);
             }
 
-            if (paper.Type != PaperTypes.Note && paper.Type != PaperTypes.Todo)
-            {
-                paper.Type = PaperTypes.Todo;
-            }
+            paper.Type = PaperTypes.Normalize(paper.Type);
+            paper.BoardView = TodoBoardViews.Normalize(paper.BoardView);
 
             paper.BodyProviderId = paper.Type == PaperTypes.Note
                 ? NormalizeBodyProviderId(paper.BodyProviderId)
@@ -637,11 +634,11 @@ public sealed class StateStore
 
             paper.Width = NormalizePaperDimension(
                 paper.Width,
-                paper.Type == PaperTypes.Note ? PaperLayoutDefaults.NoteDefaultWidth : PaperLayoutDefaults.TodoDefaultWidth,
+                PaperLayoutDefaults.DefaultWidth(paper.Type),
                 PaperLayoutDefaults.MinWidth);
             paper.Height = NormalizePaperDimension(
                 paper.Height,
-                paper.Type == PaperTypes.Note ? PaperLayoutDefaults.NoteDefaultHeight : PaperLayoutDefaults.TodoDefaultHeight,
+                PaperLayoutDefaults.DefaultHeight(paper.Type),
                 PaperLayoutDefaults.MinHeight);
 
             paper.Items ??= new List<PaperItem>();
@@ -653,6 +650,7 @@ public sealed class StateStore
             }
 
             var usedItemIds = new HashSet<string>(StringComparer.Ordinal);
+            var migrationTimestamp = DateTimeOffset.Now;
             for (var i = 0; i < paper.Items.Count; i++)
             {
                 var item = paper.Items[i];
@@ -663,14 +661,24 @@ public sealed class StateStore
 
                 item.Order = i;
                 item.Text ??= "";
+                item.Note ??= "";
+                if (item.CreatedAt == default)
+                {
+                    item.CreatedAt = migrationTimestamp;
+                }
                 if (item.Done)
                 {
+                    item.CompletedAt ??= migrationTimestamp;
                     item.ReminderAt = null;
                     item.ReminderTriggered = false;
                 }
-                else if (!item.ReminderAt.HasValue)
+                else
                 {
-                    item.ReminderTriggered = false;
+                    item.CompletedAt = null;
+                    if (!item.ReminderAt.HasValue)
+                    {
+                        item.ReminderTriggered = false;
+                    }
                 }
             }
         }
@@ -792,12 +800,8 @@ public sealed class StateStore
             return;
         }
 
-        var fallbackWidth = paper.Type == PaperTypes.Note
-            ? PaperLayoutDefaults.NoteDefaultWidth
-            : PaperLayoutDefaults.TodoDefaultWidth;
-        var fallbackHeight = paper.Type == PaperTypes.Note
-            ? PaperLayoutDefaults.NoteDefaultHeight
-            : PaperLayoutDefaults.TodoDefaultHeight;
+        var fallbackWidth = PaperLayoutDefaults.DefaultWidth(paper.Type);
+        var fallbackHeight = PaperLayoutDefaults.DefaultHeight(paper.Type);
         paper.DeepCapsuleExpandedWidth = NormalizePaperDimension(
             paper.DeepCapsuleExpandedWidth.Value,
             fallbackWidth,

@@ -26,14 +26,21 @@ public static class PaperTitles
     public static string DefaultTitle(string paperType, int number)
     {
         var prefix = DefaultTitlePrefix(paperType);
+        if (paperType == PaperTypes.Board)
+        {
+            return prefix;
+        }
         return prefix + Math.Max(1, number).ToString(CultureInfo.InvariantCulture);
     }
 
     public static string DefaultTitlePrefix(string paperType)
     {
-        return paperType == PaperTypes.Note
-            ? Strings.Get("PaperKindNote")
-            : Strings.Get("PaperKindTodo");
+        return paperType switch
+        {
+            PaperTypes.Note => Strings.Get("PaperKindNote"),
+            PaperTypes.Board => Strings.Get("PaperKindBoard"),
+            _ => Strings.Get("PaperKindTodo")
+        };
     }
 
     public static string CleanCustomTitle(string? title)

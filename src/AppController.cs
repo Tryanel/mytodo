@@ -494,6 +494,21 @@ public sealed partial class AppController : IDisposable
 
     public PaperData? CreatePaper(string type, bool show = true, PaperData? sourcePaper = null)
     {
+        var paperType = PaperTypes.Normalize(type);
+        if (paperType == PaperTypes.Board)
+        {
+            var existingBoard = State.Papers.FirstOrDefault(candidate =>
+                candidate.Type == PaperTypes.Board);
+            if (existingBoard != null)
+            {
+                if (show)
+                {
+                    ShowTodoBoardPaper(existingBoard);
+                }
+                return existingBoard;
+            }
+        }
+
         if (State.Papers.Count >= 100)
         {
             ShowPaperLimitDialog();
@@ -534,15 +549,14 @@ public sealed partial class AppController : IDisposable
             newY = cursorTarget.WorkArea.Top + 40;
         }
 
-        var paperType = type == PaperTypes.Note ? PaperTypes.Note : PaperTypes.Todo;
         var paper = new PaperData
         {
             Type = paperType,
             Title = PaperTitles.DefaultTitle(paperType, NextTitleNumber(paperType)),
             X = newX,
             Y = newY,
-            Width = type == PaperTypes.Note ? PaperLayoutDefaults.NoteDefaultWidth : PaperLayoutDefaults.TodoDefaultWidth,
-            Height = type == PaperTypes.Note ? PaperLayoutDefaults.NoteDefaultHeight : PaperLayoutDefaults.TodoDefaultHeight,
+            Width = PaperLayoutDefaults.DefaultWidth(paperType),
+            Height = PaperLayoutDefaults.DefaultHeight(paperType),
             IsVisible = show,
             AlwaysOnTop = sourcePaper?.AlwaysOnTop ?? false
         };
@@ -552,12 +566,12 @@ public sealed partial class AppController : IDisposable
         {
             paper.Width = ClampPaperDimension(
                 paper.Width,
-                paper.Type == PaperTypes.Note ? PaperLayoutDefaults.NoteDefaultWidth : PaperLayoutDefaults.TodoDefaultWidth,
+                PaperLayoutDefaults.DefaultWidth(paper.Type),
                 PaperLayoutDefaults.MinWidth,
                 Math.Max(PaperLayoutDefaults.MinWidth, targetMonitor.WorkArea.Width - 80));
             paper.Height = ClampPaperDimension(
                 paper.Height,
-                paper.Type == PaperTypes.Note ? PaperLayoutDefaults.NoteDefaultHeight : PaperLayoutDefaults.TodoDefaultHeight,
+                PaperLayoutDefaults.DefaultHeight(paper.Type),
                 PaperLayoutDefaults.MinHeight,
                 Math.Max(PaperLayoutDefaults.MinHeight, targetMonitor.WorkArea.Height - 80));
             if (sourcePaper == null &&
@@ -697,7 +711,7 @@ public sealed partial class AppController : IDisposable
 
     private int NextTitleNumber(string paperType)
     {
-        var normalizedType = paperType == PaperTypes.Note ? PaperTypes.Note : PaperTypes.Todo;
+        var normalizedType = PaperTypes.Normalize(paperType);
         var prefix = PaperTitles.DefaultTitlePrefix(normalizedType);
         var usedNumbers = new HashSet<int>();
 
@@ -723,7 +737,7 @@ public sealed partial class AppController : IDisposable
 
     public int TitleNumberFor(PaperData paper)
     {
-        var normalizedType = paper.Type == PaperTypes.Note ? PaperTypes.Note : PaperTypes.Todo;
+        var normalizedType = PaperTypes.Normalize(paper.Type);
         var number = 1;
         foreach (var existing in State.Papers)
         {
@@ -2153,6 +2167,10 @@ public sealed partial class AppController : IDisposable
 
     public bool IsPaperEmpty(PaperData paper)
     {
+        if (paper.Type == PaperTypes.Board)
+        {
+            return false;
+        }
         if (paper.Type == PaperTypes.Note)
         {
             if (!string.Equals(
@@ -2956,6 +2974,7 @@ public sealed partial class AppController : IDisposable
         }
 
         Interlocked.Increment(ref _stateRevision);
+        NotifyTodoBoardStateChanged();
         if (!_hasPendingDirty)
         {
             _hasPendingDirty = true;
@@ -3327,12 +3346,12 @@ public sealed partial class AppController : IDisposable
         var originalHeight = paper.Height;
         paper.Width = ClampPaperDimension(
             paper.Width,
-            paper.Type == PaperTypes.Note ? PaperLayoutDefaults.NoteDefaultWidth : PaperLayoutDefaults.TodoDefaultWidth,
+            PaperLayoutDefaults.DefaultWidth(paper.Type),
             PaperLayoutDefaults.MinWidth,
             Math.Max(PaperLayoutDefaults.MinWidth, area.Width - 80));
         paper.Height = ClampPaperDimension(
             paper.Height,
-            paper.Type == PaperTypes.Note ? PaperLayoutDefaults.NoteDefaultHeight : PaperLayoutDefaults.TodoDefaultHeight,
+            PaperLayoutDefaults.DefaultHeight(paper.Type),
             PaperLayoutDefaults.MinHeight,
             Math.Max(PaperLayoutDefaults.MinHeight, area.Height - 80));
         var resized = DimensionChanged(originalWidth, paper.Width) ||
