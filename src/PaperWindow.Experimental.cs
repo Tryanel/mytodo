@@ -275,6 +275,7 @@ public sealed partial class PaperWindow
 
     private bool HasExperimentalAutoCollapseBlocker() =>
         _advancedInteractionLocked ||
+        HasOpenTodoNoteEditor() ||
         _isEditingTitle ||
         _titleBarDragSession != null ||
         _todoDrag?.IsDragging == true ||

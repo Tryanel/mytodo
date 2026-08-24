@@ -36,7 +36,6 @@ public sealed partial class PaperWindow
     {
         var layout = new Grid
         {
-            Background = PaperBrush,
             Margin = new Thickness(0)
         };
         layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -127,7 +126,10 @@ public sealed partial class PaperWindow
 
         _todoBoardBody = new Border
         {
-            Background = PaperBrush,
+            // The shared paper chrome owns the paper surface and its rounded outline. Keeping
+            // the board body transparent prevents this rectangular child from covering the
+            // shell's lower corners, matching Todo and Note papers.
+            Background = Brushes.Transparent,
             Child = layout
         };
         RefreshTodoBoardBody();
@@ -203,7 +205,6 @@ public sealed partial class PaperWindow
             return;
         }
 
-        _todoBoardBody!.Background = PaperBrush;
         var view = TodoBoardViews.Normalize(_paper.BoardView);
         _paper.BoardView = view;
         _paper.BoardSort = TodoBoardSorts.Normalize(_paper.BoardSort);
