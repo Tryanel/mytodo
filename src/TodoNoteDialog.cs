@@ -9,13 +9,11 @@ namespace PaperTodo;
 
 internal static class TodoNoteDialog
 {
-    public static bool TryEdit(
+    public static Window Create(
         Window owner,
         string currentNote,
-        out string note)
+        Action<string> saveNote)
     {
-        var accepted = false;
-        var result = currentNote ?? "";
         var dialog = new Window
         {
             Owner = owner,
@@ -71,8 +69,7 @@ internal static class TodoNoteDialog
         };
         var close = CreateButton("×", subtle: true);
         close.MinWidth = 34;
-        close.IsCancel = true;
-        close.Click += (_, _) => dialog.DialogResult = false;
+        close.Click += (_, _) => dialog.Close();
         Grid.SetColumn(close, 1);
         header.Children.Add(title);
         header.Children.Add(close);
@@ -111,9 +108,8 @@ internal static class TodoNoteDialog
         clear.IsEnabled = !string.IsNullOrWhiteSpace(currentNote);
         clear.Click += (_, _) =>
         {
-            accepted = true;
-            result = "";
-            dialog.DialogResult = true;
+            saveNote("");
+            dialog.Close();
         };
         var actions = new StackPanel
         {
@@ -121,16 +117,14 @@ internal static class TodoNoteDialog
             HorizontalAlignment = HorizontalAlignment.Right
         };
         var cancel = CreateButton(Strings.Get("CommonCancel"), subtle: true);
-        cancel.IsCancel = true;
-        cancel.Click += (_, _) => dialog.DialogResult = false;
+        cancel.Click += (_, _) => dialog.Close();
         var save = CreateButton(Strings.Get("CommonSave"));
         save.Margin = new Thickness(8, 0, 0, 0);
         save.IsDefault = true;
         save.Click += (_, _) =>
         {
-            accepted = true;
-            result = editor.Text;
-            dialog.DialogResult = true;
+            saveNote(editor.Text);
+            dialog.Close();
         };
         actions.Children.Add(cancel);
         actions.Children.Add(save);
@@ -150,10 +144,18 @@ internal static class TodoNoteDialog
             editor.Focus();
             editor.CaretIndex = editor.Text.Length;
         };
+        dialog.PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key != Key.Escape)
+            {
+                return;
+            }
 
-        _ = dialog.ShowDialog();
-        note = result;
-        return accepted;
+            dialog.Close();
+            e.Handled = true;
+        };
+
+        return dialog;
     }
 
     private static Button CreateButton(string text, bool subtle = false)

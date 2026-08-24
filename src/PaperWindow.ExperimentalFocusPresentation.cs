@@ -65,6 +65,7 @@ public sealed partial class PaperWindow
 
         var interactionReveal =
             IsActive ||
+            HasOpenTodoNoteEditor() ||
             HasOpenOwnedContextMenu() ||
             _titleBarDragSession != null ||
             _todoDrag?.IsDragging == true ||

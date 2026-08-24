@@ -125,6 +125,7 @@ public sealed partial class PaperWindow
     {
         _controller.CompleteEdgeCapsuleQueueCompositionProxyFor(this);
         CommitPendingEditsForSave();
+        CloseTodoNoteEditor();
         CancelExperimentalTetherPresentation(showMain: false);
         DetachExperimentalWindowAttachment(savePosition: false);
         SettlePaperFormPresentation();
@@ -231,6 +232,7 @@ public sealed partial class PaperWindow
         // Reveal the small real host before changing the lifecycle state to Closing.
         _controller.CompleteEdgeCapsuleQueueCompositionProxyFor(this);
         CommitPendingEditsForSave();
+        CloseTodoNoteEditor();
         _windowLifecycle = PaperWindowLifecycleState.Closing;
         _presentationState = PaperPresentationState.Closing;
         _collapseTransitionGeneration++;

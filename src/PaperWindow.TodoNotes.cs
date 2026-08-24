@@ -7,10 +7,51 @@ namespace PaperTodo;
 
 public sealed partial class PaperWindow
 {
+    private Window? _todoNoteEditor;
+
     private void EditTodoNote(PaperItem item)
     {
-        if (!TodoNoteDialog.TryEdit(this, item.Note, out var note) ||
-            string.Equals(item.Note, note, StringComparison.Ordinal))
+        if (_todoNoteEditor != null)
+        {
+            if (!_todoNoteEditor.IsVisible && _todoNoteEditor.IsLoaded)
+            {
+                _todoNoteEditor.Show();
+            }
+            _todoNoteEditor.Activate();
+            return;
+        }
+
+        var itemId = item.Id;
+        var editor = TodoNoteDialog.Create(
+            this,
+            item.Note,
+            note => SaveTodoNote(itemId, note));
+        _todoNoteEditor = editor;
+        editor.Closed += (_, _) =>
+        {
+            if (!ReferenceEquals(_todoNoteEditor, editor))
+            {
+                return;
+            }
+
+            _todoNoteEditor = null;
+            RefreshExperimentalFocusPresentation();
+        };
+
+        // Show modelessly so the master collapse control and every edge capsule remain enabled.
+        // Register the editor first because Show() synchronously deactivates the owner paper.
+        CancelExperimentalAutoCollapse();
+        CancelStrictAutoCollapse();
+        RefreshExperimentalFocusPresentation(animate: false);
+        editor.Show();
+        editor.Activate();
+    }
+
+    private void SaveTodoNote(string itemId, string note)
+    {
+        var item = _paper.Items.FirstOrDefault(candidate =>
+            string.Equals(candidate.Id, itemId, StringComparison.Ordinal));
+        if (item == null || string.Equals(item.Note, note, StringComparison.Ordinal))
         {
             return;
         }
@@ -20,7 +61,16 @@ public sealed partial class PaperWindow
         _controller.MarkDirty();
         ReconcileTodoRows(
             new[] { item.Id },
-            focusItemId: item.Id);
+            focusItemId: !_paper.IsCollapsed && IsVisible ? item.Id : null);
+    }
+
+    private bool HasOpenTodoNoteEditor() => _todoNoteEditor != null;
+
+    private void CloseTodoNoteEditor()
+    {
+        var editor = _todoNoteEditor;
+        _todoNoteEditor = null;
+        editor?.Close();
     }
 
     private Border BuildTodoNoteIndicator(
