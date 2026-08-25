@@ -36,6 +36,7 @@
 | D-021 | 插件与 MCP 共用 `PaperCommandService` | Accepted | 外部命令 / 一致性 |
 | D-022 | 纸片持有任务，全局看板只做聚合投影 | Superseded by D-023 | 产品边界 / Todo |
 | D-023 | 全局看板成为单例 Board paper | Accepted | 产品边界 / Todo / UI |
+| D-024 | 计划时段与活动跨度分离 | Proposed | 产品边界 / Todo / 时间视图 |
 
 ## 维护规则
 
@@ -786,3 +787,42 @@ Board 每次从 Todo `PaperData.Items` 生成投影。任务行和日历项只�
 - `src/Models.cs` 的 `PaperTypes.Board`、`TodoBoardViews`、`TodoBoardSorts` 与对应 `PaperData` 视图偏好。
 - `src/PaperWindow.TodoBoard.cs` / `src/AppController.TodoBoard.cs`。
 - `src/PaperMarkdownExporter.cs` / `src/PaperWindow.Export.cs`。
+
+---
+
+## D-024 — 计划时段与活动跨度分离
+
+**Status:** Proposed
+
+### Context
+
+现有 Board 月历把任务创建时间到完成时间（未完成则到当天）解释为跨度，因此表达的是任务已经经历的历史时间，而不是用户对未来工作的安排。产品同时需要保留这份历史观察，并提供真正的轻量计划时间线；若继续复用创建/完成时间，会把事实与计划混成同一含义。
+
+### Decision
+
+任务新增相互独立的可选“计划开始日”和“截止日”，两者只表达计划，不修改或替代创建时间与完成时间。没有计划日期、仅有一个日期或同时有两个日期都属于有效状态；两个日期同时存在时，计划开始日不得晚于截止日。
+
+任务看板纸继续保持全局单例、只读投影和导航边界，并提供三个含义明确的视图：表格、使用跨日连续条的活动月历，以及支持周/月尺度、连续计划条和未排期任务列表的计划时间线。计划日期从 owning 待办纸设置；看板不通过拖拽或行内编辑建立例外写入路径。搜索与筛选作用于三个视图，多级排序只影响表格。Todo 与 Board 的全量 Markdown 导出包含计划日期。
+
+### Why
+
+历史事实和未来计划回答不同问题。分离后，完成、恢复和旧数据迁移不会意外改写排期，用户也能比较“原来怎样计划”和“实际何时完成”。可选的日期粒度足以支持个人任务排期，同时避免第一版引入精确时间、依赖图、进度百分比和看板直接写入所带来的复杂事务边界。
+
+### Rejected / Do not reintroduce
+
+- 不把创建时间和完成时间继续冒充计划开始日和截止日。
+- 不在 Board 投影中复制一份计划字段或建立独立保存语义。
+- 不为了拖动计划条而绕过 owning 待办纸的编辑、撤销和保存边界。
+- 第一版不引入任务依赖、进度百分比或分钟级排期。
+
+### Consequences
+
+- 计划日期属于核心任务数据协议，必须兼容没有这些字段的旧数据，并进入撤销、外部命令快照和 Markdown 导出。
+- 活动月历和计划时间线必须使用不同的数据来源与用户可见名称。
+- 实现、迁移和验收完成前，本条保持 Proposed；完成后再更新当前 Architecture、Evidence 和状态。
+
+### Evidence
+
+- `CONTEXT.md` 的活动跨度、计划时段、计划开始日、截止日、活动月历与计划时间线定义。
+- D-023 已确立的 Board paper 单例、只读投影和 owning paper 写入边界。
+- `src/Models.cs` 与 `src/PaperWindow.TodoBoard.cs` 是当前历史时间和 Board 投影的实现基线。
