@@ -28,6 +28,20 @@
 
 不要只依赖当前对话、PR 描述或旧 Agent 记忆。判断**当前技术方向**先看 Architecture；判断**旧方案为什么被否决、能否恢复**先看 Decisions；决定**这次具体怎么改**必须回到当前代码。
 
+## Agent skills
+
+### Issue tracker
+
+需求、规格与任务跟踪在 `Tryanel/mytodo` 的 GitHub Issues 中，所有 `gh` 命令显式指定该仓库。详见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+使用默认五类标签：`needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`。详见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+采用 single-context；`AGENTS.md` 负责路由，`ARCHITECTURE.md` 和 `DECISIONS.md` 保持现有知识 ownership，`CONTEXT.md` 按需补充领域词汇。详见 `docs/agents/domain.md`。
+
 ## 文档与代码同步
 
 每次代码变更在提交前做一次**知识影响判断**。按下面的 owner 更新；没有影响时可以明确不改对应文档，不为了“同步过”制造痕迹。

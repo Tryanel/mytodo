@@ -63,7 +63,7 @@ PaperTodo.exe
 | 插件状态 | `PaperBodyPluginDataStore` | provider settings 与 per-paper plugin state 的独立保存/恢复 |
 | 外部 Paper/Todo/Note 命令 | `PaperCommandService` | 插件/MCP 共用的验证、mutation、同步提交/回滚和事件发布 |
 | 单纸片 UI | `PaperWindow` | paper WPF shell、普通交互、provider 选择、子系统适配 |
-| 全局 Todo 投影 | Board 类型的 `PaperWindow` body + `AppController` | 单例 Board paper 从 `State.Papers[].Items` 生成表格/月历跨度视图，并导航回 owning Todo `PaperWindow`；只持有自身纸片生命周期和视图偏好，不保存任务副本 |
+| 全局 Todo 投影 | `TodoBoardProjection` + Board 类型的 `PaperWindow` body + `AppController` | 纯投影模块从 `State.Papers[].Items` 收集任务并统一执行表格搜索/排序和月历活动跨度查询；Board body 负责渲染与导航，仍不保存任务副本 |
 | paper-body session | `PaperBodyHost` | 当前 `IPaperBodySession` 的 attach / invoke / commit / dispose |
 | 插件发现与合同 | `PaperBodyPluginRegistry` | builtin / Native / Web provider 发现、校验、激活 |
 | Edge 单纸片业务状态 | `EdgeCapsuleReducer` + `EdgeCapsuleModel` | 单纸片 typed intent 到完整 model 的原子变化 |
@@ -185,7 +185,7 @@ transport 权限、Web/Native surface 生命周期和 MCP protocol 不下沉到 
 
 ### 5.5 Todo 全局投影与纸片导出
 
-`PaperTypes.Board` 是全局单例的纸片类型，使用普通 `PaperData` / `PaperWindow` shell，因此沿用显示、移动、尺寸、折叠胶囊、托盘、主题和删除等纸片生命周期。它的 body 是 `AppState -> Todo PaperData[] -> PaperItem[]` 的只读投影：Notion 数据库风格的表格显示全部任务、状态、所属纸片、备注和时间，支持跨显示字段的会话内即时搜索、排序菜单和列头双向排序；月历按创建时间到完成时间（未完成则到当天）的跨度投放任务。Board 自有持久化字段只包括普通纸片状态、`BoardView` 和 `BoardSort` 视图偏好，不复制任务事实；搜索词不持久化。
+`PaperTypes.Board` 是全局单例的纸片类型，使用普通 `PaperData` / `PaperWindow` shell，因此沿用显示、移动、尺寸、折叠胶囊、托盘、主题和删除等纸片生命周期。`TodoBoardProjection` 是不依赖 WPF 的只读投影 authority：从 authoritative Todo `PaperData.Items` 收集非占位任务，统一执行表格搜索/排序，以及创建时间到完成时间（未完成则到显式传入的当天）的活动跨度查询；比较文化、显示文化、时区和当天都由调用方注入，投影条目携带搜索与渲染共用的状态/时间文本。Board body 只把投影结果渲染成 Notion 数据库风格的表格与月历。Board 自有持久化字段只包括普通纸片状态、`BoardView` 和 `BoardSort` 视图偏好，不复制任务事实；搜索词不持久化。
 
 看板中的行和日历任务只负责展开、聚焦 owning Todo `PaperWindow` 并定位原任务；实际编辑、撤销、保存和外部事件仍沿用原纸片边界。`AppController.MarkDirty` 调度现有 Board paper 刷新，不把看板变成新的 state authority。创建入口返回现存 Board paper，避免产生多个全局看板。
 
@@ -315,6 +315,7 @@ Preview session 建立后，当前 owner 是 queue-wide 的 pointer arbiter：ow
 ## 8. 仓库结构
 
 - `src/`：主程序 C# 源码。
+- `PaperTodo.Tests/`：不依赖 WPF surface 的核心行为测试；当前覆盖任务/Board 纯投影边界。
 - `Resources/`：中文默认资源及 en/ja/ko 本地化 `.resx`。
 - `PaperTodo.Plugin.Abstractions/`：插件 ABI / host contract。
 - `plugins/`：可直接加载的插件产物；`plugins/data/` 保存宿主管理的插件状态。

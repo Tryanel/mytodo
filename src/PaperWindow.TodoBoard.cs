@@ -218,9 +218,21 @@ public sealed partial class PaperWindow
         }
         UpdateTodoBoardSortButton();
 
-        var entries = CollectTodoBoardEntries();
+        var snapshot = TodoBoardProjection.Build(
+            _controller.State.Papers,
+            _controller.PaperDisplayTitle,
+            new TodoBoardQueryContext(
+                _todoBoardSearchQuery,
+                _paper.BoardSort,
+                DateOnly.FromDateTime(DateTime.Today),
+                CultureInfo.CurrentCulture,
+                UiLanguages.EffectiveCulture,
+                TimeZoneInfo.Local,
+                Strings.Get("TodoBoardPending"),
+                Strings.Get("TodoBoardDone")));
+        var entries = snapshot.AllEntries;
         var displayedEntries = view == TodoBoardViews.Table
-            ? ApplyTodoBoardTableQuery(entries)
+            ? snapshot.TableEntries
             : entries;
         var hasSearch = !string.IsNullOrWhiteSpace(_todoBoardSearchQuery);
         if (_todoBoardCountText != null)
@@ -240,28 +252,9 @@ public sealed partial class PaperWindow
             : view == TodoBoardViews.Table && displayedEntries.Count == 0
                 ? BuildTodoBoardNoResultsState()
             : view == TodoBoardViews.Calendar
-                ? BuildTodoBoardCalendar(entries)
+                ? BuildTodoBoardCalendar(snapshot)
                 : BuildTodoBoardTable(displayedEntries));
     }
-
-    private List<TodoBoardEntry> CollectTodoBoardEntries() =>
-        _controller.State.Papers
-            .Select((paper, paperOrder) => (paper, paperOrder))
-            .Where(source => source.paper.Type == PaperTypes.Todo)
-            .SelectMany(source => source.paper.Items
-                .Where(item => !TodoRules.IsPlaceholder(item))
-                .Select(item => new TodoBoardEntry(
-                    source.paper.Id,
-                    item.Id,
-                    _controller.PaperDisplayTitle(source.paper),
-                    item.Text,
-                    item.Note,
-                    item.Done,
-                    item.CreatedAt,
-                    item.CompletedAt,
-                    item.Order,
-                    source.paperOrder)))
-            .ToList();
 
     private UIElement BuildTodoBoardSearchControl()
     {
@@ -376,98 +369,6 @@ public sealed partial class PaperWindow
             }
         };
         return border;
-    }
-
-    private List<TodoBoardEntry> ApplyTodoBoardTableQuery(
-        IEnumerable<TodoBoardEntry> entries)
-    {
-        var query = _todoBoardSearchQuery.Trim();
-        var filtered = string.IsNullOrEmpty(query)
-            ? entries
-            : entries.Where(entry => TodoBoardEntryMatchesSearch(entry, query));
-        return SortTodoBoardEntries(filtered).ToList();
-    }
-
-    private static bool TodoBoardEntryMatchesSearch(
-        TodoBoardEntry entry,
-        string query)
-    {
-        var comparison = StringComparison.CurrentCultureIgnoreCase;
-        return entry.Text.Contains(query, comparison) ||
-            entry.Note.Contains(query, comparison) ||
-            entry.PaperTitle.Contains(query, comparison) ||
-            Strings.Get(entry.Done ? "TodoBoardDone" : "TodoBoardPending")
-                .Contains(query, comparison) ||
-            FormatTodoBoardTimestamp(entry.CreatedAt).Contains(query, comparison) ||
-            (entry.CompletedAt.HasValue &&
-             FormatTodoBoardTimestamp(entry.CompletedAt.Value)
-                 .Contains(query, comparison));
-    }
-
-    private IOrderedEnumerable<TodoBoardEntry> SortTodoBoardEntries(
-        IEnumerable<TodoBoardEntry> entries)
-    {
-        var textComparer = StringComparer.CurrentCultureIgnoreCase;
-        return TodoBoardSorts.Normalize(_paper.BoardSort) switch
-        {
-            TodoBoardSorts.TaskAscending => entries
-                .OrderBy(entry => entry.Text, textComparer)
-                .ThenBy(entry => entry.PaperOrder)
-                .ThenBy(entry => entry.Order),
-            TodoBoardSorts.TaskDescending => entries
-                .OrderByDescending(entry => entry.Text, textComparer)
-                .ThenBy(entry => entry.PaperOrder)
-                .ThenBy(entry => entry.Order),
-            TodoBoardSorts.StatusAscending => entries
-                .OrderBy(entry => entry.Done)
-                .ThenByDescending(entry => entry.CreatedAt)
-                .ThenBy(entry => entry.PaperOrder)
-                .ThenBy(entry => entry.Order),
-            TodoBoardSorts.StatusDescending => entries
-                .OrderByDescending(entry => entry.Done)
-                .ThenByDescending(entry => entry.CreatedAt)
-                .ThenBy(entry => entry.PaperOrder)
-                .ThenBy(entry => entry.Order),
-            TodoBoardSorts.PaperAscending => entries
-                .OrderBy(entry => entry.PaperTitle, textComparer)
-                .ThenBy(entry => entry.Order),
-            TodoBoardSorts.PaperDescending => entries
-                .OrderByDescending(entry => entry.PaperTitle, textComparer)
-                .ThenBy(entry => entry.Order),
-            TodoBoardSorts.CreatedAscending => entries
-                .OrderBy(entry => entry.CreatedAt)
-                .ThenBy(entry => entry.PaperOrder)
-                .ThenBy(entry => entry.Order),
-            TodoBoardSorts.CreatedDescending => entries
-                .OrderByDescending(entry => entry.CreatedAt)
-                .ThenBy(entry => entry.PaperOrder)
-                .ThenBy(entry => entry.Order),
-            TodoBoardSorts.CompletedAscending => entries
-                .OrderBy(entry => !entry.CompletedAt.HasValue)
-                .ThenBy(entry => entry.CompletedAt)
-                .ThenBy(entry => entry.PaperOrder)
-                .ThenBy(entry => entry.Order),
-            TodoBoardSorts.CompletedDescending => entries
-                .OrderBy(entry => !entry.CompletedAt.HasValue)
-                .ThenByDescending(entry => entry.CompletedAt)
-                .ThenBy(entry => entry.PaperOrder)
-                .ThenBy(entry => entry.Order),
-            TodoBoardSorts.NoteAscending => entries
-                .OrderBy(entry => string.IsNullOrWhiteSpace(entry.Note))
-                .ThenBy(entry => entry.Note, textComparer)
-                .ThenBy(entry => entry.PaperOrder)
-                .ThenBy(entry => entry.Order),
-            TodoBoardSorts.NoteDescending => entries
-                .OrderBy(entry => string.IsNullOrWhiteSpace(entry.Note))
-                .ThenByDescending(entry => entry.Note, textComparer)
-                .ThenBy(entry => entry.PaperOrder)
-                .ThenBy(entry => entry.Order),
-            _ => entries
-                .OrderBy(entry => entry.Done)
-                .ThenByDescending(entry => entry.CreatedAt)
-                .ThenBy(entry => entry.PaperTitle, textComparer)
-                .ThenBy(entry => entry.Order)
-        };
     }
 
     private void ClearTodoBoardSearch()
@@ -840,15 +741,13 @@ public sealed partial class PaperWindow
             CompactTodoBoardText(entry.Text, 120),
             entry.Done ? WeakTextBrush : TextBrush,
             fontWeight: FontWeights.Medium);
-        AddTodoBoardStatusCell(row, 1, entry.Done);
+        AddTodoBoardStatusCell(row, 1, entry.StatusText, entry.Done);
         AddTodoBoardTextCell(row, 2, entry.PaperTitle, WeakTextBrush);
-        AddTodoBoardTextCell(row, 3, FormatTodoBoardTimestamp(entry.CreatedAt), WeakTextBrush);
+        AddTodoBoardTextCell(row, 3, entry.CreatedText, WeakTextBrush);
         AddTodoBoardTextCell(
             row,
             4,
-            entry.CompletedAt.HasValue
-                ? FormatTodoBoardTimestamp(entry.CompletedAt.Value)
-                : "—",
+            entry.CompletedText ?? "—",
             WeakTextBrush);
         AddTodoBoardTextCell(
             row,
@@ -1033,11 +932,15 @@ public sealed partial class PaperWindow
         row.Children.Add(cell);
     }
 
-    private void AddTodoBoardStatusCell(Grid row, int column, bool done)
+    private void AddTodoBoardStatusCell(
+        Grid row,
+        int column,
+        string statusText,
+        bool done)
     {
         var label = new TextBlock
         {
-            Text = Strings.Get(done ? "TodoBoardDone" : "TodoBoardPending"),
+            Text = statusText,
             Foreground = done ? WeakTextBrush : TextBrush,
             FontSize = AppTypography.Scale(9.8),
             FontWeight = FontWeights.Medium,
@@ -1065,7 +968,7 @@ public sealed partial class PaperWindow
         row.Children.Add(cell);
     }
 
-    private UIElement BuildTodoBoardCalendar(IReadOnlyList<TodoBoardEntry> entries)
+    private UIElement BuildTodoBoardCalendar(TodoBoardSnapshot snapshot)
     {
         var layout = new Grid();
         layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -1118,7 +1021,7 @@ public sealed partial class PaperWindow
         navigation.Children.Add(left);
         navigation.Children.Add(today);
 
-        var calendar = BuildTodoBoardMonthGrid(entries);
+        var calendar = BuildTodoBoardMonthGrid(snapshot);
         var scroll = new ScrollViewer
         {
             Content = calendar,
@@ -1132,7 +1035,7 @@ public sealed partial class PaperWindow
         return layout;
     }
 
-    private Grid BuildTodoBoardMonthGrid(IReadOnlyList<TodoBoardEntry> entries)
+    private Grid BuildTodoBoardMonthGrid(TodoBoardSnapshot snapshot)
     {
         var culture = UiLanguages.EffectiveCulture;
         var firstDayOfWeek = culture.DateTimeFormat.FirstDayOfWeek;
@@ -1193,7 +1096,7 @@ public sealed partial class PaperWindow
             var date = firstVisibleDate.AddDays(index);
             var row = index / 7 + 1;
             var column = index % 7;
-            var cell = BuildTodoBoardCalendarDay(date, entries);
+            var cell = BuildTodoBoardCalendarDay(date, snapshot);
             cell.BorderThickness = new Thickness(
                 column == 0 ? 1 : 0,
                 0,
@@ -1208,16 +1111,13 @@ public sealed partial class PaperWindow
 
     private Border BuildTodoBoardCalendarDay(
         DateTime date,
-        IReadOnlyList<TodoBoardEntry> entries)
+        TodoBoardSnapshot snapshot)
     {
         var inCurrentMonth = date.Month == _todoBoardCalendarMonth.Month &&
             date.Year == _todoBoardCalendarMonth.Year;
-        var isToday = date == DateTime.Today;
-        var tasks = entries
-            .Where(entry => TodoBoardEntrySpansDate(entry, date))
-            .OrderBy(entry => entry.Done)
-            .ThenByDescending(entry => entry.CreatedAt)
-            .ToList();
+        var calendarDate = DateOnly.FromDateTime(date);
+        var isToday = calendarDate == snapshot.Today;
+        var tasks = snapshot.ActivityEntriesOn(calendarDate);
 
         var content = new Grid { Margin = new Thickness(5, 4, 5, 4) };
         content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -1433,30 +1333,14 @@ public sealed partial class PaperWindow
         RefreshTodoBoardBody();
     }
 
-    private static bool TodoBoardEntrySpansDate(TodoBoardEntry entry, DateTime date)
-    {
-        var start = entry.CreatedAt.LocalDateTime.Date;
-        var end = entry.CompletedAt?.LocalDateTime.Date ?? DateTime.Today;
-        if (end < start)
-        {
-            end = start;
-        }
-        return date >= start && date <= end;
-    }
-
     private static string TodoBoardCalendarToolTip(TodoBoardEntry entry)
     {
-        var end = entry.CompletedAt.HasValue
-            ? FormatTodoBoardTimestamp(entry.CompletedAt.Value)
-            : Strings.Get("TodoBoardToday");
+        var end = entry.CompletedText ?? Strings.Get("TodoBoardToday");
         var note = string.IsNullOrWhiteSpace(entry.Note)
             ? ""
             : $"\n{Strings.Get("TodoBoardNote")}: {CompactTodoBoardText(entry.Note, 160)}";
-        return $"{entry.Text}\n{entry.PaperTitle}\n{FormatTodoBoardTimestamp(entry.CreatedAt)} → {end}{note}";
+        return $"{entry.Text}\n{entry.PaperTitle}\n{entry.CreatedText} → {end}{note}";
     }
-
-    private static string FormatTodoBoardTimestamp(DateTimeOffset value) =>
-        value.ToLocalTime().ToString("yyyy-MM-dd HH:mm", UiLanguages.EffectiveCulture);
 
     private static string CompactTodoBoardText(string? value, int maxLength)
     {
@@ -1475,15 +1359,4 @@ public sealed partial class PaperWindow
             : compact[..(maxLength - 1)] + "…";
     }
 
-    private sealed record TodoBoardEntry(
-        string PaperId,
-        string ItemId,
-        string PaperTitle,
-        string Text,
-        string Note,
-        bool Done,
-        DateTimeOffset CreatedAt,
-        DateTimeOffset? CompletedAt,
-        int Order,
-        int PaperOrder);
 }

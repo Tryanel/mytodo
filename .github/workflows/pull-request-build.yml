@@ -43,7 +43,10 @@ jobs:
           dotnet-version: "10.0.x"
 
       - name: Restore
-        run: dotnet restore .\PaperTodo.csproj
+        run: dotnet restore .\PaperTodo.slnx
 
       - name: Build
         run: dotnet build .\PaperTodo.csproj -c Release --no-restore
+
+      - name: Test
+        run: dotnet test .\PaperTodo.slnx -c Release --no-restore
