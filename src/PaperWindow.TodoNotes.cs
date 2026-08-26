@@ -58,6 +58,9 @@ public sealed partial class PaperWindow
 
         PushUndoSnapshot();
         item.Note = note;
+        TodoTaskLifecycle.MaterializeIfNeeded(
+            item,
+            DateTimeOffset.Now);
         _controller.MarkDirty();
         ReconcileTodoRows(
             new[] { item.Id },

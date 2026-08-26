@@ -24,6 +24,18 @@ public sealed class StateStore
     private bool _preserveRecoveredLoadFilesOnNextSave;
     private string? _preservedFailedPrimaryPath;
     private string? _preservedRecoveryBackupPath;
+    private readonly Func<DateTimeOffset> _now;
+
+    public StateStore()
+        : this(() => DateTimeOffset.Now)
+    {
+    }
+
+    public StateStore(Func<DateTimeOffset> now)
+    {
+        ArgumentNullException.ThrowIfNull(now);
+        _now = now;
+    }
 
     public AppState Load()
     {
@@ -34,7 +46,10 @@ public sealed class StateStore
 
         if (!mainExists && !backupExists)
         {
-            return new AppState();
+            return new AppState
+            {
+                TodoTaskLifecycleVersion = TodoTaskLifecycle.CurrentStateVersion
+            };
         }
 
         Exception? mainEx = null;
@@ -209,7 +224,7 @@ public sealed class StateStore
         ArgumentNullException.ThrowIfNull(json);
         var state = JsonSerializer.Deserialize<AppState>(json, JsonOptions)
             ?? throw new InvalidDataException("State JSON deserialized to null.");
-        NormalizeAfterLoad(state);
+        NormalizeAfterLoad(state, _now());
         return state;
     }
 
@@ -339,6 +354,7 @@ public sealed class StateStore
     {
         // Runtime commands own business invariants. Saving only repairs values that could make
         // serialization fail; it must not rebuild collections, migrate settings, or change links.
+        state.TodoTaskLifecycleVersion = TodoTaskLifecycle.CurrentStateVersion;
         state.Papers ??= new List<PaperData>();
         RemoveNullEntriesInPlace(state.Papers);
 
@@ -423,7 +439,9 @@ public sealed class StateStore
         }
     }
 
-    private static void NormalizeAfterLoad(AppState state)
+    private static void NormalizeAfterLoad(
+        AppState state,
+        DateTimeOffset migrationTimestamp)
     {
         if (state.Papers == null)
         {
@@ -432,9 +450,14 @@ public sealed class StateStore
 
         RemoveNullEntriesInPlace(state.Papers);
 
+        var persistedTodoTaskLifecycleVersion = state.TodoTaskLifecycleVersion;
         NormalizeGlobalState(state);
-        NormalizePapers(state);
+        NormalizePapers(
+            state,
+            migrationTimestamp,
+            persistedTodoTaskLifecycleVersion);
         NormalizeLinks(state);
+        state.TodoTaskLifecycleVersion = TodoTaskLifecycle.CurrentStateVersion;
     }
 
     private static void NormalizeGlobalState(AppState state)
@@ -576,7 +599,10 @@ public sealed class StateStore
         }
     }
 
-    private static void NormalizePapers(AppState state)
+    private static void NormalizePapers(
+        AppState state,
+        DateTimeOffset migrationTimestamp,
+        int persistedTodoTaskLifecycleVersion)
     {
         var usedPaperIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var paper in state.Papers)
@@ -647,7 +673,6 @@ public sealed class StateStore
             }
 
             var usedItemIds = new HashSet<string>(StringComparer.Ordinal);
-            var migrationTimestamp = DateTimeOffset.Now;
             for (var i = 0; i < paper.Items.Count; i++)
             {
                 var item = paper.Items[i];
@@ -666,10 +691,6 @@ public sealed class StateStore
                     throw new InvalidDataException(
                         $"Todo item '{item.Id}' has a planned start date after its due date.");
                 }
-                if (item.CreatedAt == default)
-                {
-                    item.CreatedAt = migrationTimestamp;
-                }
                 if (item.Done)
                 {
                     item.CompletedAt ??= migrationTimestamp;
@@ -683,6 +704,17 @@ public sealed class StateStore
                     {
                         item.ReminderTriggered = false;
                     }
+                }
+                if (persistedTodoTaskLifecycleVersion <
+                        TodoTaskLifecycle.CurrentStateVersion &&
+                    TodoRules.IsPlaceholder(item))
+                {
+                    item.CreatedAt = default;
+                }
+                else if (item.CreatedAt == default &&
+                         !TodoRules.IsPlaceholder(item))
+                {
+                    item.CreatedAt = migrationTimestamp;
                 }
             }
         }

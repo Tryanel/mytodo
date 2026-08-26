@@ -470,6 +470,7 @@ public sealed class AppState
 {
     [JsonRequired]
     public List<PaperData> Papers { get; set; } = new();
+    public int TodoTaskLifecycleVersion { get; set; }
     public string UiLanguage { get; set; } = UiLanguages.Default;
     public string Theme { get; set; } = "system";
     public string ColorScheme { get; set; } = ColorSchemes.Warm;
@@ -681,7 +682,8 @@ public sealed class PaperItem
     public bool Done { get; set; }
     public int Order { get; set; }
 
-    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public DateTimeOffset CreatedAt { get; set; }
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public DateTimeOffset? CompletedAt { get; set; }
@@ -728,9 +730,19 @@ public sealed class PaperItem
 
     public void SetDone(bool done, DateTimeOffset? changedAt = null)
     {
+        var transitionAt = changedAt ?? DateTimeOffset.Now;
+        if (done)
+        {
+            TodoTaskLifecycle.MaterializeIfNeeded(this, transitionAt);
+            if (CreatedAt == default)
+            {
+                return;
+            }
+        }
+
         Done = done;
         CompletedAt = done
-            ? CompletedAt ?? changedAt ?? DateTimeOffset.Now
+            ? CompletedAt ?? transitionAt
             : null;
     }
 

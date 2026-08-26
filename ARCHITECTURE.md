@@ -63,6 +63,7 @@ PaperTodo.exe
 | 插件状态 | `PaperBodyPluginDataStore` | provider settings 与 per-paper plugin state 的独立保存/恢复 |
 | 外部 Paper/Todo/Note 命令 | `PaperCommandService` | 插件/MCP 共用的验证、mutation、同步提交/回滚和事件发布 |
 | 单纸片 UI | `PaperWindow` | paper WPF shell、普通交互、provider 选择、子系统适配 |
+| Todo 任务实体化 | `TodoTaskLifecycle` | 统一判定占位行何时首次成为任务并记录调用方提供的创建时刻；GUI、批量与外部命令复用同一语义 |
 | Todo 撤销历史 | `TodoUndoHistory` | 以 WPF 无关的任务快照统一维护单张待办纸的 Undo/Redo；快照包含任务核心字段和跨纸片关系 |
 | 全局 Todo 投影 | `TodoBoardProjection` + Board 类型的 `PaperWindow` body + `AppController` | 纯投影模块从 `State.Papers[].Items` 收集任务并统一执行表格搜索/排序和月历活动跨度查询；Board body 负责渲染与导航，仍不保存任务副本 |
 | paper-body session | `PaperBodyHost` | 当前 `IPaperBodySession` 的 attach / invoke / commit / dispose |
@@ -111,7 +112,9 @@ Web 插件使用 WebView2 runtime；脚本胶囊可以启动 PowerShell 子进�
 
 ### 4.2 核心状态
 
-`AppState` 是核心持久化根；`PaperData` 是单纸片模型；Todo 行使用 `PaperItem`。每条 Todo 的正文、可选备注、创建时间、完成状态、完成时间、可选计划开始日和可选截止日都随 `PaperItem` 进入 `data.json`；计划日期是无时区的日历日期，合法状态包括都空、仅一端或开始日不晚于截止日的完整范围，并且不随正文、备注、完成或恢复变化。计划日期不能把空占位行实体化；真实任务设置计划日期后，即使清空正文也仍由该非文本内容保留任务身份。从旧数据加载时，`StateStore` 为缺失历史时间做兼容补齐，缺少计划字段则保持未排期；之后所有完成/恢复操作通过 `PaperItem.SetDone` 同步维护完成时间。
+`AppState` 是核心持久化根；`PaperData` 是单纸片模型；Todo 行使用 `PaperItem`。空白占位行没有创建时间，首次获得正文、备注、提醒、路径或纸片关联时由 `TodoTaskLifecycle` 成为任务并记录该次操作的时刻；完成状态与计划日期不能单独实体化占位行。任务建立后，后续正文/备注编辑、完成、恢复和计划修改不会重置创建时间。每条真实 Todo 的正文、可选备注、创建时间、完成状态、完成时间、可选计划开始日和可选截止日都随 `PaperItem` 进入 `data.json`；未实体化占位行省略创建时间。计划日期是无时区的日历日期，合法状态包括都空、仅一端或开始日不晚于截止日的完整范围，并且不随正文、备注、完成或恢复变化。
+
+从旧数据加载时，`StateStore` 对有任务内容但缺失创建时间的条目使用同一次可控迁移时刻保守补齐；`AppState.TodoTaskLifecycleVersion` 只用于区分早期“每行预写创建时间”的协议，旧空白行即使曾被误写时间也恢复为未实体化占位行，而当前协议中已经实体化后再清空正文的任务仍保留身份。缺少计划字段保持未排期；所有完成/恢复操作继续通过 `PaperItem.SetDone` 同步维护完成时间。
 
 单张待办纸的任务快照 Undo/Redo 由 WPF 无关的 `TodoUndoHistory` 维护，`PaperWindow` 只在现有用户操作边界记录和应用快照。计划日期从 owning Todo paper 的任务入口设置、校验和清除；Board 仍只读，不拥有计划日期写入路径。
 
