@@ -108,6 +108,64 @@ public sealed class TodoBoardProjectionTests
         Assert.Equal("match", Assert.Single(snapshot.TableEntries).ItemId);
     }
 
+    [Fact]
+    public void Table_search_uses_comparison_culture_when_display_culture_differs()
+    {
+        var paper = new PaperData
+        {
+            Type = PaperTypes.Todo,
+            Items = [new PaperItem { Text = "FILE" }]
+        };
+
+        var snapshot = TodoBoardProjection.Build(
+            [paper],
+            _ => "Tasks",
+            Query() with
+            {
+                SearchText = "file",
+                ComparisonCulture = CultureInfo.GetCultureInfo("tr-TR"),
+                DisplayCulture = CultureInfo.GetCultureInfo("en-US")
+            });
+
+        Assert.Empty(snapshot.TableEntries);
+    }
+
+    [Fact]
+    public void Build_exposes_the_status_and_timestamps_used_by_search_and_rendering()
+    {
+        var paper = new PaperData
+        {
+            Type = PaperTypes.Todo,
+            Items =
+            [
+                new PaperItem
+                {
+                    Text = "Finished",
+                    Done = true,
+                    CreatedAt = new DateTimeOffset(2026, 8, 25, 8, 30, 0, TimeSpan.Zero),
+                    CompletedAt = new DateTimeOffset(2026, 8, 26, 9, 45, 0, TimeSpan.Zero)
+                }
+            ]
+        };
+        var snapshot = TodoBoardProjection.Build(
+            [paper],
+            _ => "Tasks",
+            Query() with
+            {
+                TimeZone = TimeZoneInfo.CreateCustomTimeZone(
+                    "Display UTC+8",
+                    TimeSpan.FromHours(8),
+                    "Display UTC+8",
+                    "Display UTC+8"),
+                CompletedStatusText = "已完成"
+            });
+
+        var entry = Assert.Single(snapshot.AllEntries);
+        Assert.Equal("已完成", entry.StatusText);
+        Assert.Equal("2026-08-25 16:30", entry.CreatedText);
+        Assert.Equal("2026-08-26 17:45", entry.CompletedText);
+    }
+
     [Theory]
     [InlineData(TodoBoardSorts.Default, "a,c,d,b")]
     [InlineData(TodoBoardSorts.TaskAscending, "b,d,c,a")]
@@ -223,7 +281,8 @@ public sealed class TodoBoardProjectionTests
         SearchText: "",
         Sort: TodoBoardSorts.Default,
         Today: new DateOnly(2026, 8, 25),
-        Culture: CultureInfo.InvariantCulture,
+        ComparisonCulture: CultureInfo.InvariantCulture,
+        DisplayCulture: CultureInfo.InvariantCulture,
         TimeZone: TimeZoneInfo.Utc,
         PendingStatusText: "Active",
         CompletedStatusText: "Done");

@@ -225,6 +225,7 @@ public sealed partial class PaperWindow
                 _todoBoardSearchQuery,
                 _paper.BoardSort,
                 DateOnly.FromDateTime(DateTime.Today),
+                CultureInfo.CurrentCulture,
                 UiLanguages.EffectiveCulture,
                 TimeZoneInfo.Local,
                 Strings.Get("TodoBoardPending"),
@@ -740,15 +741,13 @@ public sealed partial class PaperWindow
             CompactTodoBoardText(entry.Text, 120),
             entry.Done ? WeakTextBrush : TextBrush,
             fontWeight: FontWeights.Medium);
-        AddTodoBoardStatusCell(row, 1, entry.Done);
+        AddTodoBoardStatusCell(row, 1, entry.StatusText, entry.Done);
         AddTodoBoardTextCell(row, 2, entry.PaperTitle, WeakTextBrush);
-        AddTodoBoardTextCell(row, 3, FormatTodoBoardTimestamp(entry.CreatedAt), WeakTextBrush);
+        AddTodoBoardTextCell(row, 3, entry.CreatedText, WeakTextBrush);
         AddTodoBoardTextCell(
             row,
             4,
-            entry.CompletedAt.HasValue
-                ? FormatTodoBoardTimestamp(entry.CompletedAt.Value)
-                : "—",
+            entry.CompletedText ?? "—",
             WeakTextBrush);
         AddTodoBoardTextCell(
             row,
@@ -933,11 +932,15 @@ public sealed partial class PaperWindow
         row.Children.Add(cell);
     }
 
-    private void AddTodoBoardStatusCell(Grid row, int column, bool done)
+    private void AddTodoBoardStatusCell(
+        Grid row,
+        int column,
+        string statusText,
+        bool done)
     {
         var label = new TextBlock
         {
-            Text = Strings.Get(done ? "TodoBoardDone" : "TodoBoardPending"),
+            Text = statusText,
             Foreground = done ? WeakTextBrush : TextBrush,
             FontSize = AppTypography.Scale(9.8),
             FontWeight = FontWeights.Medium,
@@ -1332,17 +1335,12 @@ public sealed partial class PaperWindow
 
     private static string TodoBoardCalendarToolTip(TodoBoardEntry entry)
     {
-        var end = entry.CompletedAt.HasValue
-            ? FormatTodoBoardTimestamp(entry.CompletedAt.Value)
-            : Strings.Get("TodoBoardToday");
+        var end = entry.CompletedText ?? Strings.Get("TodoBoardToday");
         var note = string.IsNullOrWhiteSpace(entry.Note)
             ? ""
             : $"\n{Strings.Get("TodoBoardNote")}: {CompactTodoBoardText(entry.Note, 160)}";
-        return $"{entry.Text}\n{entry.PaperTitle}\n{FormatTodoBoardTimestamp(entry.CreatedAt)} → {end}{note}";
+        return $"{entry.Text}\n{entry.PaperTitle}\n{entry.CreatedText} → {end}{note}";
     }
-
-    private static string FormatTodoBoardTimestamp(DateTimeOffset value) =>
-        value.ToLocalTime().ToString("yyyy-MM-dd HH:mm", UiLanguages.EffectiveCulture);
 
     private static string CompactTodoBoardText(string? value, int maxLength)
     {

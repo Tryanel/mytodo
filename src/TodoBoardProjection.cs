@@ -6,7 +6,8 @@ public sealed record TodoBoardQueryContext(
     string SearchText,
     string Sort,
     DateOnly Today,
-    CultureInfo Culture,
+    CultureInfo ComparisonCulture,
+    CultureInfo DisplayCulture,
     TimeZoneInfo TimeZone,
     string PendingStatusText,
     string CompletedStatusText);
@@ -21,7 +22,10 @@ public sealed record TodoBoardEntry(
     DateTimeOffset CreatedAt,
     DateTimeOffset? CompletedAt,
     int ItemOrder,
-    int PaperOrder);
+    int PaperOrder,
+    string StatusText,
+    string CreatedText,
+    string? CompletedText);
 
 public sealed class TodoBoardSnapshot
 {
@@ -81,17 +85,12 @@ public static class TodoBoardProjection
                 paper.Type == PaperTypes.Todo
                     ? paper.Items
                         .Where(item => !TodoRules.IsPlaceholder(item))
-                        .Select(item => new TodoBoardEntry(
-                            paper.Id,
-                            item.Id,
+                        .Select(item => CreateEntry(
+                            paper,
+                            item,
                             resolvePaperTitle(paper),
-                            item.Text,
-                            item.Note,
-                            item.Done,
-                            item.CreatedAt,
-                            item.CompletedAt,
-                            item.Order,
-                            paperOrder))
+                            paperOrder,
+                            query))
                     : [])
             .ToList();
 
@@ -105,34 +104,50 @@ public static class TodoBoardProjection
         return new TodoBoardSnapshot(entries, tableEntries, query);
     }
 
+    private static TodoBoardEntry CreateEntry(
+        PaperData paper,
+        PaperItem item,
+        string paperTitle,
+        int paperOrder,
+        TodoBoardQueryContext query) => new(
+            paper.Id,
+            item.Id,
+            paperTitle,
+            item.Text,
+            item.Note,
+            item.Done,
+            item.CreatedAt,
+            item.CompletedAt,
+            item.Order,
+            paperOrder,
+            item.Done ? query.CompletedStatusText : query.PendingStatusText,
+            FormatTimestamp(item.CreatedAt, query),
+            item.CompletedAt.HasValue
+                ? FormatTimestamp(item.CompletedAt.Value, query)
+                : null);
+
     private static bool MatchesSearch(
         TodoBoardEntry entry,
         string searchText,
         TodoBoardQueryContext query)
     {
-        var compareInfo = query.Culture.CompareInfo;
+        var compareInfo = query.ComparisonCulture.CompareInfo;
         return Contains(entry.Text, searchText, compareInfo) ||
             Contains(entry.Note, searchText, compareInfo) ||
             Contains(entry.PaperTitle, searchText, compareInfo) ||
-            Contains(
-                entry.Done
-                    ? query.CompletedStatusText
-                    : query.PendingStatusText,
-                searchText,
-                compareInfo) ||
-            Contains(FormatTimestamp(entry.CreatedAt, query), searchText, compareInfo) ||
-            entry.CompletedAt.HasValue &&
-            Contains(
-                FormatTimestamp(entry.CompletedAt.Value, query),
-                searchText,
-                compareInfo);
+            Contains(entry.StatusText, searchText, compareInfo) ||
+            Contains(entry.CreatedText, searchText, compareInfo) ||
+            entry.CompletedText is not null &&
+            Contains(entry.CompletedText, searchText, compareInfo);
     }
 
     private static IOrderedEnumerable<TodoBoardEntry> Sort(
         IEnumerable<TodoBoardEntry> entries,
         TodoBoardQueryContext query)
     {
-        var textComparer = StringComparer.Create(query.Culture, ignoreCase: true);
+        var textComparer = StringComparer.Create(
+            query.ComparisonCulture,
+            ignoreCase: true);
         return TodoBoardSorts.Normalize(query.Sort) switch
         {
             TodoBoardSorts.TaskAscending => entries
@@ -205,5 +220,5 @@ public static class TodoBoardProjection
         DateTimeOffset value,
         TodoBoardQueryContext query) =>
         TimeZoneInfo.ConvertTime(value, query.TimeZone)
-            .ToString("yyyy-MM-dd HH:mm", query.Culture);
+            .ToString("yyyy-MM-dd HH:mm", query.DisplayCulture);
 }
