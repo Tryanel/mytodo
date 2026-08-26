@@ -5,7 +5,7 @@ using System.Windows.Input;
 
 namespace PaperTodo;
 
-internal static class TodoReminderDialogControls
+internal static class TodoDialogControls
 {
     public static Button Button(
         string text,

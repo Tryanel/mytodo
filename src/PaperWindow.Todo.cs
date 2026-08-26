@@ -506,6 +506,12 @@ public sealed partial class PaperWindow
             todoNoteColumn = grid.ColumnDefinitions.Count;
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         }
+        int? todoPlanningColumn = null;
+        if (item.PlannedStartDate.HasValue || item.DueDate.HasValue)
+        {
+            todoPlanningColumn = grid.ColumnDefinitions.Count;
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        }
         grid.ColumnDefinitions.Add(new ColumnDefinition
         {
             Width = new GridLength(Math.Max(
@@ -579,12 +585,7 @@ public sealed partial class PaperWindow
                 var oldText = item.Text;
                 item.Text = _activeOriginalText;
 
-                _undoStack.Add(CloneItems(_paper.Items));
-                if (_undoStack.Count > MaxUndoDepth)
-                {
-                    _undoStack.RemoveAt(0);
-                }
-                _redoStack.Clear();
+                _todoHistory.Record(_paper.Items);
 
                 item.Text = oldText;
                 _activeOriginalText = oldText;
@@ -689,6 +690,15 @@ public sealed partial class PaperWindow
                     ? "MenuAddTodoNote"
                     : "MenuEditTodoNote"),
                 (_, _) => EditTodoNote(item)));
+            if (!TodoRules.IsPlaceholder(item))
+            {
+                itemMenu.Items.Add(MenuItem(
+                    Strings.Get(
+                        item.PlannedStartDate.HasValue || item.DueDate.HasValue
+                            ? "MenuEditTodoPlanning"
+                            : "MenuSetTodoPlanning"),
+                    (_, _) => EditTodoPlanning(item)));
+            }
             itemMenu.Items.Add(MenuHeader(Strings.Format(
                 "TodoCreatedAt",
                 FormatTodoTimestamp(item.CreatedAt))));
@@ -697,6 +707,18 @@ public sealed partial class PaperWindow
                 itemMenu.Items.Add(MenuHeader(Strings.Format(
                     "TodoCompletedAt",
                     FormatTodoTimestamp(item.CompletedAt.Value))));
+            }
+            if (item.PlannedStartDate.HasValue)
+            {
+                itemMenu.Items.Add(MenuHeader(Strings.Format(
+                    "TodoPlannedStartSummary",
+                    FormatTodoPlanningDate(item.PlannedStartDate.Value))));
+            }
+            if (item.DueDate.HasValue)
+            {
+                itemMenu.Items.Add(MenuHeader(Strings.Format(
+                    "TodoDueSummary",
+                    FormatTodoPlanningDate(item.DueDate.Value))));
             }
             itemMenu.Items.Add(MenuSeparator());
             if (hasLinkedPaper)
@@ -1029,6 +1051,14 @@ public sealed partial class PaperWindow
             AttachItemContextMenu(noteIndicator);
             Grid.SetColumn(noteIndicator, todoNoteColumn.Value);
             grid.Children.Add(noteIndicator);
+        }
+
+        if (todoPlanningColumn.HasValue)
+        {
+            var planningIndicator = BuildTodoPlanningIndicator(item, metrics);
+            AttachItemContextMenu(planningIndicator);
+            Grid.SetColumn(planningIndicator, todoPlanningColumn.Value);
+            grid.Children.Add(planningIndicator);
         }
 
         var handleGlyph = new TextBlock
@@ -2238,12 +2268,7 @@ public sealed partial class PaperWindow
     {
         CommitFocusedTextIfNeeded();
 
-        _undoStack.Add(CloneItems(_paper.Items));
-        if (_undoStack.Count > MaxUndoDepth)
-        {
-            _undoStack.RemoveAt(0);
-        }
-        _redoStack.Clear();
+        _todoHistory.Record(_paper.Items);
     }
 
     private void CommitFocusedTextIfNeeded()
@@ -2259,12 +2284,7 @@ public sealed partial class PaperWindow
                     var oldText = item.Text;
                     item.Text = _activeOriginalText;
 
-                    var oldSnapshot = CloneItems(_paper.Items);
-                    _undoStack.Add(oldSnapshot);
-                    if (_undoStack.Count > MaxUndoDepth)
-                    {
-                        _undoStack.RemoveAt(0);
-                    }
+                    _todoHistory.Record(_paper.Items);
 
                     item.Text = oldText;
                     _activeOriginalText = oldText;
@@ -2275,52 +2295,52 @@ public sealed partial class PaperWindow
 
     private void Undo()
     {
-        if (_undoStack.Count == 0)
+        if (!_todoHistory.CanUndo)
         {
             return;
         }
 
         var focusedId = CurrentFocusedTodoItemId();
 
-        var currentItems = CloneItems(_paper.Items);
-        _redoStack.Add(currentItems);
+        var transition = _todoHistory.Undo(_paper.Items);
+        if (transition == null)
+        {
+            return;
+        }
 
-        var previousItems = _undoStack[^1];
-        _undoStack.RemoveAt(_undoStack.Count - 1);
-
-        _paper.Items = previousItems;
+        _paper.Items = transition.Items;
         NormalizeTodoItems();
         NormalizeOrders();
         _controller.MarkDirty();
         _controller.NotifyTodoReminderCollectionChanged();
 
         RebuildTodoRows(focusedId);
-        RefreshCapsuleEligibilityForLinkedPaperChanges(currentItems);
+        RefreshCapsuleEligibilityForLinkedPaperChanges(transition.ReplacedItems);
     }
 
     private void Redo()
     {
-        if (_redoStack.Count == 0)
+        if (!_todoHistory.CanRedo)
         {
             return;
         }
 
         var focusedId = CurrentFocusedTodoItemId();
 
-        var currentItems = CloneItems(_paper.Items);
-        _undoStack.Add(currentItems);
+        var transition = _todoHistory.Redo(_paper.Items);
+        if (transition == null)
+        {
+            return;
+        }
 
-        var nextItems = _redoStack[^1];
-        _redoStack.RemoveAt(_redoStack.Count - 1);
-
-        _paper.Items = nextItems;
+        _paper.Items = transition.Items;
         NormalizeTodoItems();
         NormalizeOrders();
         _controller.MarkDirty();
         _controller.NotifyTodoReminderCollectionChanged();
 
         RebuildTodoRows(focusedId);
-        RefreshCapsuleEligibilityForLinkedPaperChanges(currentItems);
+        RefreshCapsuleEligibilityForLinkedPaperChanges(transition.ReplacedItems);
     }
 
     private bool TryCollapseExpandedPaperFromEscape()

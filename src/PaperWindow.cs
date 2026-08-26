@@ -89,11 +89,10 @@ public sealed partial class PaperWindow : Window
     private bool _paperContextMenuOpening;
     private int _paperContextMenuOpeningVersion;
     private bool _paperContextMenuRefreshPending;
-    private readonly List<List<PaperItem>> _undoStack = new();
+    private readonly TodoUndoHistory _todoHistory = new(MaxUndoDepth);
     private readonly Dictionary<string, Dictionary<string, Action>> _linkedPaperTitleRefreshers =
         new(StringComparer.Ordinal);
     private bool _updatingTopBarResponsiveLayout;
-    private readonly List<List<PaperItem>> _redoStack = new();
     private const int MaxUndoDepth = 100;
     private string? _activeOriginalItemId;
     private string? _activeOriginalText;

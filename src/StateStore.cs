@@ -43,14 +43,7 @@ public sealed class StateStore
             try
             {
                 var json = File.ReadAllText(FilePath);
-                var state = JsonSerializer.Deserialize<AppState>(json, JsonOptions);
-                if (state != null)
-                {
-                    NormalizeAfterLoad(state);
-                    return state;
-                }
-
-                mainEx = new InvalidDataException($"{Path.GetFileName(FilePath)} deserialized to null.");
+                return DeserializeState(json);
             }
             catch (Exception ex)
             {
@@ -64,19 +57,12 @@ public sealed class StateStore
             try
             {
                 var json = File.ReadAllText(BackupPath);
-                var state = JsonSerializer.Deserialize<AppState>(json, JsonOptions);
-                if (state != null)
+                var state = DeserializeState(json);
+                if (mainExists)
                 {
-                    if (mainExists)
-                    {
-                        _preserveRecoveredLoadFilesOnNextSave = true;
-                    }
-
-                    NormalizeAfterLoad(state);
-                    return state;
+                    _preserveRecoveredLoadFilesOnNextSave = true;
                 }
-
-                backupEx = new InvalidDataException($"{Path.GetFileName(BackupPath)} deserialized to null.");
+                return state;
             }
             catch (Exception ex)
             {
@@ -216,6 +202,15 @@ public sealed class StateStore
     {
         PrepareForSave(state);
         return JsonSerializer.Serialize(state, JsonOptions);
+    }
+
+    public AppState DeserializeState(string json)
+    {
+        ArgumentNullException.ThrowIfNull(json);
+        var state = JsonSerializer.Deserialize<AppState>(json, JsonOptions)
+            ?? throw new InvalidDataException("State JSON deserialized to null.");
+        NormalizeAfterLoad(state);
+        return state;
     }
 
     public void SaveJsonSync(string json, long version)
@@ -664,6 +659,13 @@ public sealed class StateStore
                 item.Order = i;
                 item.Text ??= "";
                 item.Note ??= "";
+                if (!PaperItem.IsPlanningRangeValid(
+                        item.PlannedStartDate,
+                        item.DueDate))
+                {
+                    throw new InvalidDataException(
+                        $"Todo item '{item.Id}' has a planned start date after its due date.");
+                }
                 if (item.CreatedAt == default)
                 {
                     item.CreatedAt = migrationTimestamp;

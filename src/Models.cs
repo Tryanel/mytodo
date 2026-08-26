@@ -665,6 +665,14 @@ public sealed class PaperData
     public string Content { get; set; } = "";
 }
 
+public enum TodoPlanningUpdateResult
+{
+    Unchanged,
+    Updated,
+    InvalidRange,
+    NotTask
+}
+
 public sealed class PaperItem
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -677,6 +685,14 @@ public sealed class PaperItem
 
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public DateTimeOffset? CompletedAt { get; set; }
+
+    [JsonInclude]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateOnly? PlannedStartDate { get; private set; }
+
+    [JsonInclude]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateOnly? DueDate { get; private set; }
 
     [JsonInclude]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -718,6 +734,37 @@ public sealed class PaperItem
             : null;
     }
 
+    public TodoPlanningUpdateResult SetPlanningDates(
+        DateOnly? plannedStartDate,
+        DateOnly? dueDate)
+    {
+        if (!IsPlanningRangeValid(plannedStartDate, dueDate))
+        {
+            return TodoPlanningUpdateResult.InvalidRange;
+        }
+
+        if ((plannedStartDate.HasValue || dueDate.HasValue) && TodoRules.IsPlaceholder(this))
+        {
+            return TodoPlanningUpdateResult.NotTask;
+        }
+
+        if (PlannedStartDate == plannedStartDate && DueDate == dueDate)
+        {
+            return TodoPlanningUpdateResult.Unchanged;
+        }
+
+        PlannedStartDate = plannedStartDate;
+        DueDate = dueDate;
+        return TodoPlanningUpdateResult.Updated;
+    }
+
+    internal static bool IsPlanningRangeValid(
+        DateOnly? plannedStartDate,
+        DateOnly? dueDate) =>
+        !plannedStartDate.HasValue ||
+        !dueDate.HasValue ||
+        plannedStartDate.Value <= dueDate.Value;
+
     internal void RestoreQuickLaunch(string? paperId, string? path)
     {
         var normalizedPaperId = NormalizeQuickLaunchValue(paperId);
@@ -730,6 +777,14 @@ public sealed class PaperItem
 
         LinkedPaperId = null;
         LinkedPath = NormalizeQuickLaunchValue(path);
+    }
+
+    internal void RestorePlanningDates(
+        DateOnly? plannedStartDate,
+        DateOnly? dueDate)
+    {
+        PlannedStartDate = plannedStartDate;
+        DueDate = dueDate;
     }
 
     private static string? NormalizeQuickLaunchValue(string? value)
