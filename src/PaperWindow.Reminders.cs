@@ -515,6 +515,9 @@ public sealed partial class PaperWindow
         PushUndoSnapshot();
         item.ReminderAt = reminderAt;
         item.ReminderTriggered = false;
+        TodoTaskLifecycle.MaterializeIfNeeded(
+            item,
+            DateTimeOffset.Now);
         _pendingTodoReminderRevealItemId =
             reminderAt.HasValue && _controller.State.EnableAnimations
                 ? itemId

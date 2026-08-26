@@ -1068,6 +1068,9 @@ public sealed partial class PaperWindow
         var previousItems = CloneItems(_paper.Items);
         PushUndoSnapshot();
         item.LinkPath(path);
+        TodoTaskLifecycle.MaterializeIfNeeded(
+            item,
+            DateTimeOffset.Now);
         _controller.MarkDirty();
         ReconcileTodoRows([item.Id], focusedId);
         RefreshCapsuleEligibilityForLinkedPaperChanges(previousItems);

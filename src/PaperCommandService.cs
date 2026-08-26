@@ -251,6 +251,7 @@ internal sealed class PaperCommandService
                 "note");
         var linkedPaperId = NormalizeLinkedPaperUpdate(request);
         var snapshot = TodoPaperSnapshot.Capture(paper);
+        var changedAt = DateTimeOffset.Now;
 
         using (_controller.SuppressPaperPluginEventScans())
         {
@@ -267,18 +268,19 @@ internal sealed class PaperCommandService
             {
                 item.Note = note;
             }
+            if (request.UpdateLinkedPaper)
+            {
+                item.LinkPaper(linkedPaperId);
+            }
+            TodoTaskLifecycle.MaterializeIfNeeded(item, changedAt);
             if (request.Done.HasValue)
             {
-                item.SetDone(request.Done.Value);
+                item.SetDone(request.Done.Value, changedAt);
                 if (item.Done)
                 {
                     item.ReminderAt = null;
                     item.ReminderTriggered = false;
                 }
-            }
-            if (request.UpdateLinkedPaper)
-            {
-                item.LinkPaper(linkedPaperId);
             }
             if (request.Order.HasValue)
             {
@@ -334,6 +336,9 @@ internal sealed class PaperCommandService
         {
             item.ReminderAt = request.ReminderAt;
             item.ReminderTriggered = false;
+            TodoTaskLifecycle.MaterializeIfNeeded(
+                item,
+                DateTimeOffset.Now);
             if (!_controller.TryCommitExternalMutation())
             {
                 snapshot.Restore(paper);
@@ -566,6 +571,7 @@ internal sealed class PaperCommandService
         IReadOnlyList<TodoCreateItem> inputs)
     {
         var added = new List<PaperItem>(inputs.Count);
+        var createdAt = DateTimeOffset.Now;
         foreach (var input in inputs)
         {
             var linkedPaperId = NormalizeLinkedPaper(input.LinkedPaperId, paper.Id);
@@ -573,12 +579,12 @@ internal sealed class PaperCommandService
             {
                 Text = input.Text,
                 Note = input.Note,
-                Done = input.Done,
                 Order = paper.Items.Count,
-                CompletedAt = input.Done ? DateTimeOffset.Now : null,
                 ReminderAt = input.Done ? null : input.ReminderAt
             };
             item.LinkPaper(linkedPaperId);
+            TodoTaskLifecycle.MaterializeIfNeeded(item, createdAt);
+            item.SetDone(input.Done, createdAt);
             paper.Items.Add(item);
             added.Add(item);
         }

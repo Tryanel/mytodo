@@ -96,6 +96,7 @@ public sealed partial class PaperWindow : Window
     private const int MaxUndoDepth = 100;
     private string? _activeOriginalItemId;
     private string? _activeOriginalText;
+    private DateTimeOffset _activeOriginalCreatedAt;
     private bool _suppressTodoBackspaceUntilKeyUp;
     private Button? _closeButton;
     private Grid _capsuleShell = null!;

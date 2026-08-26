@@ -522,6 +522,7 @@ public sealed partial class PaperWindow
         var check = new CheckBox
         {
             IsChecked = item.Done,
+            IsEnabled = !TodoRules.IsPlaceholder(item),
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center,
             Cursor = Cursors.Hand,
@@ -565,6 +566,10 @@ public sealed partial class PaperWindow
         {
             AcknowledgeTriggeredTodoReminder(item, row);
             item.Text = text.Text;
+            TodoTaskLifecycle.MaterializeIfNeeded(
+                item,
+                DateTimeOffset.Now);
+            check.IsEnabled = !TodoRules.IsPlaceholder(item);
             InvalidateEdgeCapsulePreviewContent();
             _controller.MarkDirty();
         };
@@ -576,6 +581,7 @@ public sealed partial class PaperWindow
         {
             _activeOriginalItemId = item.Id;
             _activeOriginalText = text.Text;
+            _activeOriginalCreatedAt = item.CreatedAt;
         };
 
         text.LostFocus += (_, _) =>
@@ -583,12 +589,16 @@ public sealed partial class PaperWindow
             if (_activeOriginalItemId == item.Id && _activeOriginalText != null && text.Text != _activeOriginalText)
             {
                 var oldText = item.Text;
+                var oldCreatedAt = item.CreatedAt;
                 item.Text = _activeOriginalText;
+                item.CreatedAt = _activeOriginalCreatedAt;
 
                 _todoHistory.Record(_paper.Items);
 
                 item.Text = oldText;
+                item.CreatedAt = oldCreatedAt;
                 _activeOriginalText = oldText;
+                _activeOriginalCreatedAt = oldCreatedAt;
             }
         };
 
@@ -699,9 +709,12 @@ public sealed partial class PaperWindow
                             : "MenuSetTodoPlanning"),
                     (_, _) => EditTodoPlanning(item)));
             }
-            itemMenu.Items.Add(MenuHeader(Strings.Format(
-                "TodoCreatedAt",
-                FormatTodoTimestamp(item.CreatedAt))));
+            if (item.CreatedAt != default)
+            {
+                itemMenu.Items.Add(MenuHeader(Strings.Format(
+                    "TodoCreatedAt",
+                    FormatTodoTimestamp(item.CreatedAt))));
+            }
             if (item.CompletedAt.HasValue)
             {
                 itemMenu.Items.Add(MenuHeader(Strings.Format(
@@ -1227,6 +1240,8 @@ public sealed partial class PaperWindow
         PushUndoSnapshot();
         _activeOriginalItemId = null;
         _activeOriginalText = null;
+        _activeOriginalCreatedAt = default;
+        var materializedAt = DateTimeOffset.Now;
         box.Text = pastedItemTexts[0];
         box.CaretIndex = Math.Min(box.Text.Length, prefix.Length + lines[0].Length);
         item.Text = box.Text;
@@ -1237,11 +1252,13 @@ public sealed partial class PaperWindow
         var newItems = new List<PaperItem>();
         foreach (var line in pastedItemTexts.Skip(1))
         {
-            newItems.Add(new PaperItem
+            var newItem = new PaperItem
             {
                 Text = line,
                 Done = false
-            });
+            };
+            TodoTaskLifecycle.MaterializeIfNeeded(newItem, materializedAt);
+            newItems.Add(newItem);
         }
 
         ordered.InsertRange(insertIndex, newItems);
@@ -1349,6 +1366,9 @@ public sealed partial class PaperWindow
             Text = text,
             Done = false
         };
+        TodoTaskLifecycle.MaterializeIfNeeded(
+            newItem,
+            DateTimeOffset.Now);
 
         ordered.Insert(index, newItem);
         _paper.Items = ordered;
@@ -1659,6 +1679,9 @@ public sealed partial class PaperWindow
         var previousItems = CloneItems(_paper.Items);
         PushUndoSnapshot();
         item.LinkPaper(paperId);
+        TodoTaskLifecycle.MaterializeIfNeeded(
+            item,
+            DateTimeOffset.Now);
         _controller.MarkDirty();
         ReconcileTodoRows([item.Id], focusedId);
         RefreshCapsuleEligibilityForLinkedPaperChanges(previousItems);
@@ -2282,12 +2305,16 @@ public sealed partial class PaperWindow
                 if (item != null)
                 {
                     var oldText = item.Text;
+                    var oldCreatedAt = item.CreatedAt;
                     item.Text = _activeOriginalText;
+                    item.CreatedAt = _activeOriginalCreatedAt;
 
                     _todoHistory.Record(_paper.Items);
 
                     item.Text = oldText;
+                    item.CreatedAt = oldCreatedAt;
                     _activeOriginalText = oldText;
+                    _activeOriginalCreatedAt = oldCreatedAt;
                 }
             }
         }
