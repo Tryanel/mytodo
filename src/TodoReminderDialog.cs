@@ -62,7 +62,7 @@ internal static class TodoReminderDialog
         };
         var content = new StackPanel();
 
-        var close = TodoReminderDialogControls.Button(
+        var close = TodoDialogControls.Button(
             "×",
             compact: true);
         close.IsCancel = true;
@@ -130,9 +130,9 @@ internal static class TodoReminderDialog
                 CultureInfo.InvariantCulture),
             maximumLength: 10);
         var previousDay =
-            TodoReminderDialogControls.RepeatButton("−");
+            TodoDialogControls.RepeatButton("−");
         var nextDay =
-            TodoReminderDialogControls.RepeatButton("+");
+            TodoDialogControls.RepeatButton("+");
         var today = CreateQuickDateButton(
             Strings.Get("TodoReminderToday"));
         var tomorrow = CreateQuickDateButton(
@@ -151,9 +151,9 @@ internal static class TodoReminderDialog
                 CultureInfo.InvariantCulture),
             maximumLength: 5);
         var previousMinute =
-            TodoReminderDialogControls.RepeatButton("−");
+            TodoDialogControls.RepeatButton("−");
         var nextMinute =
-            TodoReminderDialogControls.RepeatButton("+");
+            TodoDialogControls.RepeatButton("+");
         var timeField = BuildAdjustableField(
             Strings.Get("TodoReminderTime"),
             timeInput,
@@ -172,11 +172,11 @@ internal static class TodoReminderDialog
         };
         content.Children.Add(validation);
 
-        var cancel = TodoReminderDialogControls.Button(
+        var cancel = TodoDialogControls.Button(
             Strings.Get("CommonCancel"));
         cancel.IsCancel = true;
         cancel.Click += (_, _) => dialog.DialogResult = false;
-        var confirm = TodoReminderDialogControls.Button(
+        var confirm = TodoDialogControls.Button(
             Strings.Get("CommonOk"),
             primary: true);
         confirm.IsDefault = true;
@@ -409,7 +409,7 @@ internal static class TodoReminderDialog
 
     private static Button CreateQuickDateButton(string text)
     {
-        var button = TodoReminderDialogControls.Button(
+        var button = TodoDialogControls.Button(
             text,
             compact: true);
         button.MinWidth = 44;

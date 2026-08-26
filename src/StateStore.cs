@@ -659,6 +659,13 @@ public sealed class StateStore
                 item.Order = i;
                 item.Text ??= "";
                 item.Note ??= "";
+                if (!PaperItem.IsPlanningRangeValid(
+                        item.PlannedStartDate,
+                        item.DueDate))
+                {
+                    throw new InvalidDataException(
+                        $"Todo item '{item.Id}' has a planned start date after its due date.");
+                }
                 if (item.CreatedAt == default)
                 {
                     item.CreatedAt = migrationTimestamp;

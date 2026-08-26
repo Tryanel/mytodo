@@ -156,6 +156,30 @@ public sealed class TodoPlanningTests
     }
 
     [Fact]
+    public void Core_state_rejects_a_reversed_persisted_planning_range()
+    {
+        const string json = """
+            {
+              "papers": [
+                {
+                  "type": "todo",
+                  "items": [
+                    {
+                      "text": "Invalid schedule",
+                      "plannedStartDate": "2026-10-02",
+                      "dueDate": "2026-10-01"
+                    }
+                  ]
+                }
+              ]
+            }
+            """;
+        var store = new StateStore();
+
+        Assert.Throws<InvalidDataException>(() => store.DeserializeState(json));
+    }
+
+    [Fact]
     public void Placeholder_cannot_be_materialized_by_planning_dates_alone()
     {
         var item = new PaperItem();

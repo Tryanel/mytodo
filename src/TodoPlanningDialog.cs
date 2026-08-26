@@ -60,7 +60,7 @@ internal static class TodoPlanningDialog
         };
         var content = new StackPanel();
 
-        var close = TodoReminderDialogControls.Button("×", compact: true);
+        var close = TodoDialogControls.Button("×", compact: true);
         close.IsCancel = true;
         close.Click += (_, _) => dialog.DialogResult = false;
         var title = new TextBlock
@@ -120,7 +120,7 @@ internal static class TodoPlanningDialog
         content.Children.Add(dragSurface);
 
         var startInput = CreateDateInput(initialPlannedStartDate);
-        var startClear = TodoReminderDialogControls.Button(
+        var startClear = TodoDialogControls.Button(
             Strings.Get("TodoPlanningClear"),
             compact: true);
         startClear.MinWidth = 58;
@@ -131,7 +131,7 @@ internal static class TodoPlanningDialog
             startClear));
 
         var dueInput = CreateDateInput(initialDueDate);
-        var dueClear = TodoReminderDialogControls.Button(
+        var dueClear = TodoDialogControls.Button(
             Strings.Get("TodoPlanningClear"),
             compact: true);
         dueClear.MinWidth = 58;
@@ -153,11 +153,11 @@ internal static class TodoPlanningDialog
         };
         content.Children.Add(validation);
 
-        var cancel = TodoReminderDialogControls.Button(
+        var cancel = TodoDialogControls.Button(
             Strings.Get("CommonCancel"));
         cancel.IsCancel = true;
         cancel.Click += (_, _) => dialog.DialogResult = false;
-        var confirm = TodoReminderDialogControls.Button(
+        var confirm = TodoDialogControls.Button(
             Strings.Get("CommonSave"),
             primary: true);
         confirm.IsDefault = true;
