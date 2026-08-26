@@ -615,6 +615,7 @@ public sealed class StateStore
             paper.Type = PaperTypes.Normalize(paper.Type);
             paper.BoardView = TodoBoardViews.Normalize(paper.BoardView);
             paper.BoardSort = TodoBoardSorts.Normalize(paper.BoardSort);
+            NormalizeBoardPreferences(paper);
 
             paper.BodyProviderId = paper.Type == PaperTypes.Note
                 ? NormalizeBodyProviderId(paper.BodyProviderId)
@@ -718,6 +719,18 @@ public sealed class StateStore
                 }
             }
         }
+    }
+
+    private static void NormalizeBoardPreferences(PaperData paper)
+    {
+        if (paper.Type != PaperTypes.Board)
+        {
+            return;
+        }
+        paper.BoardFilters = TodoBoardFilters.Normalize(paper.BoardFilters);
+        paper.BoardSortRules = paper.BoardSortRules is null
+            ? TodoBoardSortRules.FromLegacy(paper.BoardSort)
+            : TodoBoardSortRules.Normalize(paper.BoardSortRules);
     }
 
     private static string NormalizeBodyProviderId(string? providerId)
