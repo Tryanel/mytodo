@@ -610,7 +610,15 @@ public sealed class PaperData
     public string Type { get; set; } = PaperTypes.Todo;
     public string Title { get; set; } = "";
     public string BoardView { get; set; } = TodoBoardViews.Table;
+    // Kept for 4.0.x data compatibility. StateStore migrates it once when BoardSortRules is absent;
+    // current Board interactions only write the rule list.
     public string BoardSort { get; set; } = TodoBoardSorts.Default;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public TodoBoardFilterState? BoardFilters { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<TodoBoardSortRule>? BoardSortRules { get; set; }
 
     public double X { get; set; } = 120;
     public double Y { get; set; } = 120;
