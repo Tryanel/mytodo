@@ -255,6 +255,7 @@ public sealed partial class PaperWindow
 
     private void AbortAllInteractions(InteractionAbortReason reason)
     {
+        CloseTodoBoardCalendarOverflow();
         CancelPendingTitleEditIntent();
         CancelCurrentPaperBodyInteractions();
         EndTitleBarDragGesture();

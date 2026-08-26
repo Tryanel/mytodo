@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -11,7 +12,6 @@ namespace PaperTodo;
 public sealed partial class PaperWindow
 {
     private const double TodoBoardTableMinimumWidth = 1080;
-    private const int TodoBoardCalendarVisibleItemsPerDay = 3;
 
     private Border? _todoBoardBody;
     private Grid? _todoBoardContentHost;
@@ -24,6 +24,7 @@ public sealed partial class PaperWindow
     private Button? _todoBoardClearSearchButton;
     private Button? _todoBoardFilterButton;
     private Button? _todoBoardSortButton;
+    private Popup? _todoBoardCalendarOverflowPopup;
     private string _todoBoardSearchQuery = "";
     private bool _todoBoardRefreshScheduled;
     private DateTime _todoBoardCalendarMonth = new(
@@ -209,6 +210,8 @@ public sealed partial class PaperWindow
         {
             return;
         }
+
+        CloseTodoBoardCalendarOverflow();
 
         var view = TodoBoardViews.Normalize(_paper.BoardView);
         _paper.BoardView = view;
@@ -1014,6 +1017,14 @@ public sealed partial class PaperWindow
         var offset = ((int)_todoBoardCalendarMonth.DayOfWeek -
             (int)firstDayOfWeek + 7) % 7;
         var firstVisibleDate = _todoBoardCalendarMonth.AddDays(-offset);
+        var firstVisibleCalendarDate = DateOnly.FromDateTime(firstVisibleDate);
+        var visibleLaneCount = TodoBoardCalendarVisibleLaneCount();
+        var activityLayout = TodoBoardActivityCalendarLayout.Build(
+            snapshot,
+            firstVisibleCalendarDate,
+            weekCount: 6,
+            visibleLaneCount);
+        var weekRowHeight = Math.Max(88, 56 + visibleLaneCount * 20);
 
         var calendar = new Grid
         {
@@ -1033,7 +1044,7 @@ public sealed partial class PaperWindow
         {
             calendar.RowDefinitions.Add(new RowDefinition
             {
-                Height = new GridLength(96)
+                Height = new GridLength(weekRowHeight)
             });
         }
 
@@ -1068,7 +1079,7 @@ public sealed partial class PaperWindow
             var date = firstVisibleDate.AddDays(index);
             var row = index / 7 + 1;
             var column = index % 7;
-            var cell = BuildTodoBoardCalendarDay(date, snapshot);
+            var cell = BuildTodoBoardCalendarDay(date, snapshot.Today);
             cell.BorderThickness = new Thickness(
                 column == 0 ? 1 : 0,
                 0,
@@ -1078,25 +1089,64 @@ public sealed partial class PaperWindow
             Grid.SetColumn(cell, column);
             calendar.Children.Add(cell);
         }
+
+        foreach (var segment in activityLayout.Segments.Where(segment => segment.IsVisible))
+        {
+            var item = BuildTodoBoardCalendarSegment(segment);
+            Grid.SetRow(item, segment.WeekIndex + 1);
+            Grid.SetColumn(item, segment.StartColumn);
+            Grid.SetColumnSpan(item, segment.EndColumn - segment.StartColumn + 1);
+            Panel.SetZIndex(item, 2);
+            calendar.Children.Add(item);
+        }
+
+        foreach (var overflow in activityLayout.OverflowDays)
+        {
+            var dayOffset = overflow.Date.DayNumber - firstVisibleCalendarDate.DayNumber;
+            var entries = activityLayout.EntriesOn(overflow.Date);
+            Button? overflowButton = null;
+            overflowButton = CreateTodoBoardTextButton(
+                Strings.Format("TodoBoardMoreItems", overflow.HiddenEntries.Count),
+                () =>
+                {
+                    if (overflowButton != null)
+                    {
+                        OpenTodoBoardCalendarOverflow(
+                            overflowButton,
+                            overflow.Date,
+                            entries);
+                    }
+                });
+            overflowButton.Padding = new Thickness(5, 1, 5, 1);
+            overflowButton.Margin = new Thickness(4, 0, 4, 4);
+            overflowButton.HorizontalAlignment = HorizontalAlignment.Left;
+            overflowButton.VerticalAlignment = VerticalAlignment.Bottom;
+            overflowButton.Foreground = WeakTextBrush;
+            overflowButton.ToolTip = Strings.Format(
+                "TodoBoardCalendarOverflowToolTip",
+                entries.Count);
+            AutomationProperties.SetName(
+                overflowButton,
+                Strings.Format("TodoBoardCalendarOverflowToolTip", entries.Count));
+            Grid.SetRow(overflowButton, dayOffset / 7 + 1);
+            Grid.SetColumn(overflowButton, dayOffset % 7);
+            Panel.SetZIndex(overflowButton, 3);
+            calendar.Children.Add(overflowButton);
+        }
         return calendar;
     }
 
     private Border BuildTodoBoardCalendarDay(
         DateTime date,
-        TodoBoardSnapshot snapshot)
+        DateOnly today)
     {
         var inCurrentMonth = date.Month == _todoBoardCalendarMonth.Month &&
             date.Year == _todoBoardCalendarMonth.Year;
         var calendarDate = DateOnly.FromDateTime(date);
-        var isToday = calendarDate == snapshot.Today;
-        var tasks = snapshot.ActivityEntriesOn(calendarDate);
+        var isToday = calendarDate == today;
 
         var content = new Grid { Margin = new Thickness(5, 4, 5, 4) };
         content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        content.RowDefinitions.Add(new RowDefinition
-        {
-            Height = new GridLength(1, GridUnitType.Star)
-        });
         var dayNumber = new Border
         {
             Width = 22,
@@ -1116,26 +1166,7 @@ public sealed partial class PaperWindow
                 Opacity = inCurrentMonth ? 1 : 0.55
             }
         };
-        var items = new StackPanel { Margin = new Thickness(0, 4, 0, 0) };
-        foreach (var entry in tasks.Take(TodoBoardCalendarVisibleItemsPerDay))
-        {
-            items.Children.Add(BuildTodoBoardCalendarItem(entry));
-        }
-        if (tasks.Count > TodoBoardCalendarVisibleItemsPerDay)
-        {
-            items.Children.Add(new TextBlock
-            {
-                Text = Strings.Format(
-                    "TodoBoardMoreItems",
-                    tasks.Count - TodoBoardCalendarVisibleItemsPerDay),
-                Foreground = WeakTextBrush,
-                FontSize = AppTypography.Scale(9.2),
-                Margin = new Thickness(5, 2, 0, 0)
-            });
-        }
-        Grid.SetRow(items, 1);
         content.Children.Add(dayNumber);
-        content.Children.Add(items);
         return new Border
         {
             BorderBrush = PaperBorderBrush,
@@ -1146,19 +1177,34 @@ public sealed partial class PaperWindow
         };
     }
 
-    private Border BuildTodoBoardCalendarItem(TodoBoardEntry entry)
+    private Border BuildTodoBoardCalendarSegment(TodoBoardActivitySegment segment)
     {
+        var entry = segment.Entry;
         var item = new Border
         {
             Height = 18,
-            Margin = new Thickness(0, 0, 0, 2),
+            Margin = new Thickness(
+                segment.ContinuesBefore ? 0 : 4,
+                29 + segment.Lane * 20,
+                segment.ContinuesAfter ? 0 : 4,
+                0),
             Padding = new Thickness(5, 0, 4, 0),
-            CornerRadius = new CornerRadius(3),
+            CornerRadius = new CornerRadius(
+                segment.ContinuesBefore ? 0 : 4,
+                segment.ContinuesAfter ? 0 : 4,
+                segment.ContinuesAfter ? 0 : 4,
+                segment.ContinuesBefore ? 0 : 4),
             Background = entry.Done
                 ? Theme.Tint((byte)(Theme.IsDark ? 22 : 13))
                 : Theme.Tint((byte)(Theme.IsDark ? 48 : 28)),
+            BorderBrush = entry.Done
+                ? PaperBorderBrush
+                : Theme.ActiveBrush,
+            BorderThickness = new Thickness(1),
             Cursor = Cursors.Hand,
             Focusable = true,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Top,
             ToolTip = TodoBoardCalendarToolTip(entry),
             Child = new TextBlock
             {
@@ -1170,7 +1216,9 @@ public sealed partial class PaperWindow
                 VerticalAlignment = VerticalAlignment.Center
             }
         };
-        AutomationProperties.SetName(item, entry.Text);
+        AutomationProperties.SetName(
+            item,
+            TodoBoardCalendarAutomationName(entry));
         item.MouseLeftButtonUp += (_, e) =>
         {
             _controller.OpenTodoFromBoard(entry.PaperId, entry.ItemId);
@@ -1186,6 +1234,173 @@ public sealed partial class PaperWindow
         };
         return item;
     }
+
+    private int TodoBoardCalendarVisibleLaneCount()
+    {
+        var height = _todoBoardContentHost?.ActualHeight ?? 0;
+        if (!double.IsFinite(height) || height <= 0)
+        {
+            return 3;
+        }
+
+        var approximateWeekHeight = Math.Max(0, height - 76) / 6;
+        return Math.Clamp(
+            (int)Math.Floor((approximateWeekHeight - 56) / 20),
+            1,
+            6);
+    }
+
+    private void OpenTodoBoardCalendarOverflow(
+        Button anchor,
+        DateOnly date,
+        IReadOnlyList<TodoBoardEntry> entries)
+    {
+        CloseTodoBoardCalendarOverflow();
+
+        var content = new StackPanel();
+        content.Children.Add(new TextBlock
+        {
+            Text = Strings.Format(
+                "TodoBoardCalendarOverflowTitle",
+                date.ToString("D", UiLanguages.EffectiveCulture),
+                entries.Count),
+            Foreground = TextBrush,
+            FontSize = AppTypography.Scale(12),
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(12, 10, 12, 8)
+        });
+        foreach (var entry in entries)
+        {
+            var row = CreateTodoBoardButton(
+                new StackPanel
+                {
+                    Children =
+                    {
+                        new TextBlock
+                        {
+                            Text = $"{(entry.Done ? "✓" : "○")} {CompactTodoBoardText(entry.Text, 80)}",
+                            Foreground = entry.Done ? WeakTextBrush : TextBrush,
+                            FontSize = AppTypography.Scale(10.4),
+                            FontWeight = FontWeights.Medium,
+                            TextTrimming = TextTrimming.CharacterEllipsis
+                        },
+                        new TextBlock
+                        {
+                            Text = entry.PaperTitle,
+                            Foreground = WeakTextBrush,
+                            FontSize = AppTypography.Scale(9.3),
+                            Margin = new Thickness(18, 2, 0, 0)
+                        }
+                    }
+                },
+                () =>
+                {
+                    CloseTodoBoardCalendarOverflow();
+                    _controller.OpenTodoFromBoard(entry.PaperId, entry.ItemId);
+                });
+            row.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+            row.Padding = new Thickness(10, 7, 10, 7);
+            row.ToolTip = TodoBoardCalendarToolTip(entry);
+            AutomationProperties.SetName(
+                row,
+                TodoBoardCalendarAutomationName(entry));
+            content.Children.Add(row);
+        }
+
+        var workArea = TodoBoardCalendarPopupWorkArea(anchor);
+        var popupBody = new Border
+        {
+            Width = Math.Max(120, Math.Min(340, workArea.Width - 48)),
+            MaxHeight = Math.Max(100, workArea.Height - 72),
+            Background = PaperBrush,
+            BorderBrush = PaperBorderBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(4),
+            Focusable = true,
+            Effect = new System.Windows.Media.Effects.DropShadowEffect
+            {
+                BlurRadius = 14,
+                ShadowDepth = 4,
+                Opacity = Theme.IsDark ? 0.45 : 0.2
+            },
+            Child = new ScrollViewer
+            {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = content
+            }
+        };
+        popupBody.PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Escape)
+            {
+                CloseTodoBoardCalendarOverflow();
+                anchor.Focus();
+                e.Handled = true;
+            }
+        };
+
+        var popup = new Popup
+        {
+            AllowsTransparency = true,
+            StaysOpen = false,
+            Placement = PlacementMode.Bottom,
+            PlacementTarget = anchor,
+            HorizontalOffset = 0,
+            VerticalOffset = 2,
+            Child = popupBody
+        };
+        popup.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_todoBoardCalendarOverflowPopup, popup))
+            {
+                _todoBoardCalendarOverflowPopup = null;
+            }
+        };
+        _todoBoardCalendarOverflowPopup = popup;
+        popup.IsOpen = true;
+        _ = Dispatcher.BeginInvoke(
+            (Action)(() =>
+            {
+                if (_todoBoardCalendarOverflowPopup?.IsOpen == true)
+                {
+                    popupBody.Focus();
+                }
+            }),
+            DispatcherPriority.Input);
+    }
+
+    private void CloseTodoBoardCalendarOverflow()
+    {
+        if (_todoBoardCalendarOverflowPopup != null)
+        {
+            _todoBoardCalendarOverflowPopup.IsOpen = false;
+            _todoBoardCalendarOverflowPopup = null;
+        }
+    }
+
+    private Rect TodoBoardCalendarPopupWorkArea(FrameworkElement anchor)
+    {
+        try
+        {
+            var center = anchor.PointToScreen(new Point(
+                Math.Max(0, anchor.ActualWidth / 2),
+                Math.Max(0, anchor.ActualHeight / 2)));
+            return WindowWorkAreaHelper.TryGetMonitorGeometryAtDeviceScreenPoint(
+                    DeviceScreenPoint.FromPoint(center),
+                    out var geometry)
+                ? geometry.LocalWorkAreaDip
+                : WindowWorkAreaHelper.WorkAreaFor(this);
+        }
+        catch (InvalidOperationException)
+        {
+            return WindowWorkAreaHelper.WorkAreaFor(this);
+        }
+    }
+
+    private static string TodoBoardCalendarAutomationName(TodoBoardEntry entry) =>
+        $"{entry.StatusText}: {CompactTodoBoardText(entry.Text, 80)} — {entry.PaperTitle}";
 
     private Button CreateTodoBoardToolbarButton(
         string glyph,

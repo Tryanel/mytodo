@@ -61,16 +61,18 @@ public sealed class TodoBoardSnapshot
             .ThenByDescending(entry => entry.CreatedAt)
             .ToList();
 
-    private bool SpansDate(TodoBoardEntry entry, DateOnly date)
+    internal (DateOnly Start, DateOnly End) ActivitySpanFor(TodoBoardEntry entry)
     {
         var start = LocalDate(entry.CreatedAt);
         var end = entry.CompletedAt.HasValue
             ? LocalDate(entry.CompletedAt.Value)
             : _query.Today;
-        if (end < start)
-        {
-            end = start;
-        }
+        return (start, end < start ? start : end);
+    }
+
+    private bool SpansDate(TodoBoardEntry entry, DateOnly date)
+    {
+        var (start, end) = ActivitySpanFor(entry);
         return date >= start && date <= end;
     }
 
