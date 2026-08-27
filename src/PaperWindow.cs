@@ -2624,9 +2624,12 @@ public sealed partial class PaperWindow : Window
             }
         }
 
-        menu.Items.Add(MenuItem(
-            Strings.Get("MenuExportMarkdown"),
-            (_, _) => ExportPaperAsMarkdown()));
+        if (CanExportPaperAsMarkdown())
+        {
+            menu.Items.Add(MenuItem(
+                Strings.Get("MenuExportMarkdown"),
+                (_, _) => ExportPaperAsMarkdown()));
+        }
 
         if (CanDisplayAsCapsule())
         {

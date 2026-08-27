@@ -227,6 +227,8 @@ public sealed partial class PaperWindow
             return;
         }
 
+        CancelMarkdownExportForWindowClose();
+
         // The compositor proxy can only hand off while this window still accepts endpoint frames.
         // Reveal the small real host before changing the lifecycle state to Closing.
         _controller.CompleteEdgeCapsuleQueueCompositionProxyFor(this);

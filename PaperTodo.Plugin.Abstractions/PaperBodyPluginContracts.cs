@@ -8,7 +8,8 @@ public enum PaperBodyCapabilities
 {
     None = 0,
     TextZoom = 1 << 0,
-    NoteLinks = 1 << 1
+    NoteLinks = 1 << 1,
+    FullMarkdownExport = 1 << 2
 }
 
 [Flags]
@@ -173,6 +174,18 @@ public interface IPaperMiniViewProvider
 public interface IPaperBodyViewMigrationProvider
 {
     PaperMiniViewSize PreferredMigratedMiniViewSize => new(360, 260);
+}
+
+/// <summary>
+/// Optional protocol 1.10 session interface for exporting the complete current paper body as a
+/// Markdown document. The host calls Commit first. Implementations must return the full document
+/// from this live session, not a capsule summary or a stale presentation cache. Null is invalid;
+/// an empty string is a valid empty document.
+/// </summary>
+public interface IPaperMarkdownExportProvider
+{
+    ValueTask<string?> GetFullMarkdownAsync(
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>

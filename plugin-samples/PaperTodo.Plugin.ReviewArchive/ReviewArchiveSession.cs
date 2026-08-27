@@ -10,7 +10,9 @@ using static PaperTodo.Plugin.ReviewArchive.ReviewArchiveSettingsReader;
 
 namespace PaperTodo.Plugin.ReviewArchive;
 
-internal sealed class ReviewArchiveSession : IPaperBodySession
+internal sealed class ReviewArchiveSession :
+    IPaperBodySession,
+    IPaperMarkdownExportProvider
 {
     private static readonly JsonSerializerOptions JsonOptions =
         new(JsonSerializerDefaults.Web);
@@ -666,6 +668,69 @@ internal sealed class ReviewArchiveSession : IPaperBodySession
             builder.AppendLine(string.Join(',', row.Select(Csv)));
         }
         return builder.ToString();
+    }
+
+    public ValueTask<string?> GetFullMarkdownAsync(
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var records = ReviewArchiveStore.Snapshot()
+            .OrderByDescending(LastActivityAt)
+            .ToArray();
+        var markdown = new StringBuilder();
+        markdown.AppendLine("# PaperTodo 待办复盘记录");
+        markdown.AppendLine();
+        markdown.Append("共 ").Append(records.Length).AppendLine(" 条记录。");
+
+        foreach (var record in records)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            markdown.AppendLine();
+            markdown.Append("## ").AppendLine(MarkdownText(record.Text, "（空待办）"));
+            markdown.Append("- 状态：").AppendLine(record.Done ? "已完成" : "进行中");
+            markdown.Append("- 所属纸片：").AppendLine(MarkdownText(record.PaperTitle, "（未知）"));
+            markdown.Append("- 创建时间：").AppendLine(FormatDate(record.CreatedAt));
+            markdown.Append("- 最后完成时间：").AppendLine(
+                record.CompletedAt.HasValue ? FormatDate(record.CompletedAt.Value) : "未完成");
+            markdown.Append("- 提醒时间：").AppendLine(
+                record.ReminderAt.HasValue ? FormatDate(record.ReminderAt.Value) : "未设置");
+            markdown.Append("- 来源状态：").AppendLine(record.SourceDeleted ? "已删除" : "存在");
+            markdown.Append("- 来源：").AppendLine(MarkdownText(record.Origin, "user"));
+            if (record.Events.Count == 0)
+            {
+                continue;
+            }
+
+            markdown.AppendLine("- 事件：");
+            foreach (var item in record.Events.OrderBy(value => value.At))
+            {
+                markdown.Append("  - ")
+                    .Append(FormatDate(item.At))
+                    .Append(" · ")
+                    .Append(MarkdownText(item.Kind, "unknown"));
+                if (item.Estimated)
+                {
+                    markdown.Append(" · 首次观察值");
+                }
+                markdown.AppendLine();
+            }
+        }
+
+        return ValueTask.FromResult<string?>(
+            markdown.ToString().TrimEnd() + Environment.NewLine);
+    }
+
+    private static string MarkdownText(string? value, string fallback)
+    {
+        var text = string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+        return text
+            .Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("\r", " ", StringComparison.Ordinal)
+            .Replace("\n", " ", StringComparison.Ordinal)
+            .Replace("#", "\\#", StringComparison.Ordinal)
+            .Replace("*", "\\*", StringComparison.Ordinal)
+            .Replace("_", "\\_", StringComparison.Ordinal)
+            .Replace("`", "\\`", StringComparison.Ordinal);
     }
 
     private static string Csv(string value) =>

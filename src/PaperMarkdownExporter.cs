@@ -17,9 +17,18 @@ internal static class PaperMarkdownExporter
         {
             AppendTodos(markdown, paper);
         }
-        else
+        else if (string.IsNullOrWhiteSpace(paper.BodyProviderId) ||
+                 string.Equals(
+                     paper.BodyProviderId,
+                     PaperBodyProviderIds.Markdown,
+                     StringComparison.Ordinal))
         {
             AppendPaperContent(markdown, paper, currentNoteContent);
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                "Plugin paper Markdown must come from its live session.");
         }
 
         return markdown.ToString().TrimEnd() + Environment.NewLine;
@@ -131,11 +140,6 @@ internal static class PaperMarkdownExporter
             .AppendLine(Strings.Get("ExportMarkdownPaperContent"));
 
         var content = currentNoteContent ?? paper.Content ?? "";
-        if (string.IsNullOrWhiteSpace(content) &&
-            !string.IsNullOrWhiteSpace(paper.BodyCapsuleText))
-        {
-            content = paper.BodyCapsuleText;
-        }
 
         markdown.AppendLine().AppendLine(content.TrimEnd());
     }

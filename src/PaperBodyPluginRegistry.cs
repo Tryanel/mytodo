@@ -83,7 +83,7 @@ internal sealed class PaperBodyPluginMiniSizeManifest
 /// </summary>
 internal sealed partial class PaperBodyPluginRegistry : IDisposable
 {
-    internal const string SupportedPluginApiVersion = "1.9";
+    internal const string SupportedPluginApiVersion = "1.10";
     internal const string MinimumPluginApiVersion = "1.8";
     private static readonly Regex PluginIdPattern = PluginIdRegex();
     private static readonly StringComparer UiDisplayNameComparer =
@@ -492,6 +492,12 @@ internal sealed partial class PaperBodyPluginRegistry : IDisposable
                 throw new InvalidDataException(
                     $"Native plugin runtime requirements {plugin.RuntimeRequirements} must match manifest requirements {manifestRuntimeRequirements}.");
             }
+            var manifestCapabilities = ParseCapabilities(manifest.Capabilities);
+            if (plugin.Capabilities != manifestCapabilities)
+            {
+                throw new InvalidDataException(
+                    $"Native plugin capabilities {plugin.Capabilities} must match manifest capabilities {manifestCapabilities}.");
+            }
             if (plugin.StateVersion < 1 ||
                 plugin.StateVersion != manifest.StateVersion)
             {
@@ -651,7 +657,7 @@ internal sealed partial class PaperBodyPluginRegistry : IDisposable
         return combined;
     }
 
-    private static PaperBodyCapabilities ParseCapabilities(IEnumerable<string>? values)
+    internal static PaperBodyCapabilities ParseCapabilities(IEnumerable<string>? values)
     {
         var result = PaperBodyCapabilities.None;
         foreach (var value in values ?? [])
@@ -660,6 +666,7 @@ internal sealed partial class PaperBodyPluginRegistry : IDisposable
             {
                 "textzoom" => PaperBodyCapabilities.TextZoom,
                 "notelinks" => PaperBodyCapabilities.NoteLinks,
+                "fullmarkdownexport" => PaperBodyCapabilities.FullMarkdownExport,
                 _ => PaperBodyCapabilities.None
             };
         }

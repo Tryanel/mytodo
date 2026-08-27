@@ -39,6 +39,7 @@
 | D-024 | 计划时段与活动跨度分离 | Proposed | 产品边界 / Todo / 时间视图 |
 | D-025 | 任务备注编辑器使用逻辑 ownership，不使用 WPF owned window | Accepted | Todo / 窗口生命周期 |
 | D-026 | 破坏性操作在 mutation / shutdown 前协调任务备注草稿 | Accepted | Todo / 事务 / 退出 |
+| D-027 | 插件 Markdown 导出由 opt-in live session 提供 | Accepted | 插件 / 导出 / 协议 |
 
 ## 维护规则
 
@@ -896,3 +897,36 @@ GUI 任务/纸片删除先通过 owning `TodoNoteEditorSession` 处理脏草稿�
 - `src/TodoNoteExitSaveTransaction.cs` / `src/AppController.TodoNoteDraftTransactions.cs` / `src/AppController.cs`：可回滚的集中退出批次与 shutdown boundary。
 - `src/AppController.Mcp.cs` / `src/PaperCommandService.cs`：外部 commit 后的失效协调。
 - `PaperTodo.Tests/TodoNoteExitDraftBatchTests.cs` / `PaperTodo.Tests/TodoNoteDestructiveTransactionWpfSmokeTests.cs`。
+
+---
+
+## D-027 — 插件 Markdown 导出由 opt-in live session 提供
+
+**Status:** Accepted
+
+### Context
+
+内置 Todo、Markdown Note 和 Board 都有宿主可理解的 authoritative 内容，因此宿主能够生成完整 Markdown。paper-body plugin 的正文则可能只存在于当前 Native/Web session、独立插件状态或 `.runtime`；核心 `PaperData.Content` 与 `BodyCapsuleText` 最多是旧内容或轻量 presentation cache。无条件显示导出入口会把摘要或陈旧缓存包装成看似成功的完整文档。
+
+### Decision
+
+协议 1.10 增加向后兼容的 `FullMarkdownExport` capability 与 `IPaperMarkdownExportProvider` session interface。只有 manifest 明确声明该能力（Native DLL capability 必须一致）的插件纸显示宿主导出入口。宿主在同一个 current session 上先 `Commit()`，再请求完整 Markdown；Web body 通过 `registerFullMarkdownExportProvider` 注册同步 adapter。返回异常、null、未注册 provider、Web 文档未就绪或等待期间 session 被替换都视为失败，文件写入不会开始。旧 1.8/1.9 插件不声明能力即可原样加载。
+
+### Why
+
+完整正文的 ownership 属于插件 session，而能力发现、菜单、文件选择、文件写入、本地化反馈和 session 生命周期校验属于宿主。把 seam 放在单一“从当前 session 取得完整 Markdown”interface 上，使 Native 与 Web 共用一种行为，同时不要求宿主理解插件状态格式，也不让插件自行复制 PaperTodo 的文件 UI。
+
+### Rejected / Do not reintroduce
+
+- 不从 `BodyCapsuleText`、capsule `PlainText`、`PaperData.Content` 或旧插件 state 猜测完整正文。
+- 不给未 opt-in 的插件纸显示一个可能导出不完整内容的命令。
+- 不为了导出把 opaque 插件正文塞进核心 `data.json`，也不把导出文件变成回读或同步 authority。
+- 不在异步导出完成后接受已被替换或销毁的旧 session 结果。
+
+### Evidence
+
+- `PaperTodo.Plugin.Abstractions/PaperBodyPluginContracts.cs`：协议 1.10 capability 与 session interface。
+- `src/PaperBodyHost.cs` / `src/WebPaperBodySession.cs`：commit、Native/Web adapter 与 lifecycle 校验。
+- `src/PaperWindow.Export.cs` / `src/PaperWindow.PluginBodies.cs`：菜单能力门控、失败反馈和文件写入顺序。
+- `plugin-samples/PaperTodo.Plugin.ReviewArchive/`：opt-in Native 示例与完整记录导出。
+- `PaperTodo.Tests/PaperBodyMarkdownExportTests.cs` / `PaperTodo.Tests/PaperMarkdownExporterTests.cs`。

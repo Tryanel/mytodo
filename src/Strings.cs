@@ -197,6 +197,7 @@ public static class Strings
             ["ExportMarkdownSuccess"] = ["Markdown 文档已保存到：\n{0}", "Markdown saved to:\n{0}", "Markdown を保存しました：\n{0}", "Markdown을 저장했습니다:\n{0}"],
             ["ExportMarkdownFailedTitle"] = ["导出失败", "Export failed", "書き出しに失敗", "내보내기 실패"],
             ["ExportMarkdownFailed"] = ["无法保存 Markdown 文档：\n{0}", "Could not save the Markdown document:\n{0}", "Markdown を保存できませんでした：\n{0}", "Markdown 문서를 저장할 수 없습니다:\n{0}"],
+            ["ExportMarkdownPluginFailed"] = ["插件未能从当前会话提供完整 Markdown，请保持纸片打开后重试。", "The plugin could not provide complete Markdown from the current session. Keep the paper open and try again.", "プラグインは現在のセッションから完全な Markdown を提供できませんでした。紙を開いたまま再試行してください。", "플러그인이 현재 세션에서 전체 Markdown을 제공하지 못했습니다. 메모지를 연 상태로 다시 시도하세요."],
             ["ExportMarkdownTasks"] = ["待办事项", "Todos", "ToDo", "할 일"],
             ["ExportMarkdownNote"] = ["备注", "Note", "メモ", "메모"],
             ["ExportMarkdownCreated"] = ["创建时间", "Created", "作成日時", "생성 시간"],
