@@ -195,7 +195,7 @@ internal sealed partial class PaperBodyPluginRegistry : IDisposable
             PaperTodoPermissionNames.None,
             PaperBodyRuntimeRequirements.None,
             AppContext.BaseDirectory,
-            typeof(PaperWindow).Assembly.Location,
+            Path.Combine(AppContext.BaseDirectory, "PaperTodo.exe"),
             "builtin");
 
         var discoveredNativeDirectories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

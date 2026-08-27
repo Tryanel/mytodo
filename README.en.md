@@ -6,7 +6,7 @@
 
 A minimal Windows desktop sticky-note app built with native WPF. No permanent main window, no account, and no management screen you must open first.
 
-![version](https://img.shields.io/badge/version-v3.1-3b82f6) ![platform](https://img.shields.io/badge/platform-Windows%20x64-555) ![.NET](https://img.shields.io/badge/.NET-10-512bd4) ![UI](https://img.shields.io/badge/UI-WPF-0078d4)
+![version](https://img.shields.io/badge/version-v4.1.0--preview-3b82f6) ![platform](https://img.shields.io/badge/platform-Windows%20x64-555) ![.NET](https://img.shields.io/badge/.NET-10-512bd4) ![UI](https://img.shields.io/badge/UI-WPF-0078d4)
 
 **Website**: [https://snownico0722.github.io/PaperTodo/](https://snownico0722.github.io/PaperTodo/) 
 
@@ -52,16 +52,17 @@ A minimal Windows desktop sticky-note app built with native WPF. No permanent ma
 ### Core Features
 
 - **Multiple independent papers** — Each paper is its own window, and common actions take one or two steps instead of layers of navigation.
-- **One app, two paper types**:
+- **One app, three paper types**:
   - **Todo paper**: one item per line. Check, edit, delete, and clear completed items.
   - **Note paper**: plain text with Markdown syntax highlighting and three rendering levels.
+  - **Task board paper**: one global read-only projection for viewing every task and navigating back to its source.
 - **Capsule mode** (on by default) — Use the top-right control to fold a paper into a small capsule and open it again when needed.
 - **Automatic edge docking** (on by default) — Folded capsules dock along screen edges. Multi-monitor layouts are supported, and a capsule can be dragged to another side or display.
 - **Script capsules** — Start a note with `!p` / `!power` to run its contents quickly as a PowerShell script.
 - **Link papers to todos** — Drag a note paper onto a todo item, then open the target paper directly; the link model also supports plugin bodies and other todo papers.
-- **Todo notes and timestamps** — Each todo can have a multiline note and automatically records its created and completed times.
-- **Task board paper** — Open the single global board paper from the tray and view every todo in a Notion-inspired database table or month-calendar span. The table supports cross-field search, a sort menu, clickable column sorting, and navigation back to the source paper.
-- **Markdown export** — Export any paper as `.md`; todo exports include tasks, notes, and timestamps, while the board exports every task grouped by source paper.
+- **Todo notes, timestamps, and planning** — Each todo can have a multiline note, automatically records created/completed times, and can independently set a planned start and due date.
+- **Task board paper** — Open the single global board from the tray and use a Notion-lite table, activity calendar, or planning timeline. Search supports multiple terms and quoted phrases, with combined filters, prioritized multi-level sorting, and navigation back to the source paper.
+- **Markdown export** — Todo exports include tasks, notes, history, and planning dates; board exports always include every task grouped by source paper regardless of the current query; plugin papers expose export only when they explicitly support complete Markdown.
 - **Note images** — Paste, drop, or choose local images from the menu.
 - **Local data** — Papers auto-save to `data.json` with a backup; note images are written incrementally and safely to a single `note-assets.lmdb` file.
 
@@ -117,10 +118,12 @@ Good for today's tasks, temporary items, and small desktop checklists.
 - **Undo / redo** — `Ctrl+Z` / `Ctrl+Y`
 - **Auto-clear completed** — Optional in settings; completed items are removed automatically when checked.
 - **Notes and timestamps** — Right-click a todo to add or edit its note and inspect created/completed times; completion time follows check and restore actions automatically.
+- **Completion record** — After directly completing one task, use the lightweight action beside it to optionally record how it was done; batch and external completion stay silent.
+- **Planning dates** — Right-click a todo to set or clear its planned start and due date. Either date works alone, and a complete range is validated.
 
 **Linked papers**: Drag a note paper from its title bar onto a todo item. The item then shows an entry for opening the target paper.
 
-**Export**: Right-click a paper and choose “Export as Markdown” to include every todo's check state, note, created time, and completed time.
+**Export**: Right-click a paper and choose “Export as Markdown” to include every todo's check state, note, created/completed times, planned start, and due date.
 
 ---
 
@@ -199,7 +202,7 @@ PaperTodo has no permanent main window. The tray icon is the global entry point,
 - **Double-click tray icon** — Show and bring back all papers.
 - **Right-click tray icon** — Open the menu (version at the top).
 - **Settings** — Open the settings window.
-- **Task board** — Use the board icon in the tray header to open or recover the same movable, resizable, collapsible board paper with table and month-calendar views.
+- **Task board** — Use the board icon in the tray header to open or recover the same movable, resizable, collapsible board paper with table, activity-calendar, and planning-timeline views.
 - **List toolbar** — Toggle show/hide all papers; create a todo or note paper.
 - **Master capsule** — Right-click the master capsule at the top of an edge queue for the same menu as the tray.
 - **Delete paper** — Click `×` on a row, then Confirm or Cancel.
@@ -255,7 +258,7 @@ Custom fonts can also be placed in the program folder: `papertodo.ttf` / `papert
 GitHub Actions builds two Windows x64 single-file executables and publishes them directly in each Release:
 
 - **`...-self-contained.exe`** — Self-contained with the .NET Runtime.
-- **`...-no-runtime.exe`** — No bundled runtime (requires .NET to be installed locally).
+- **`...-no-runtime.exe`** — No bundled runtime (requires the .NET 10 Desktop Runtime x64).
 
 Each build includes Sigstore signatures (`.sig` / `.crt`).
 
@@ -271,7 +274,8 @@ dotnet build -c Release
 
 Local packaging only builds the no-runtime single file; cloud Releases publish both self-contained and no-runtime builds.
 
-- **Windows / .NET 10 / WPF** — Runtime and UI framework.
+- **Windows 10 version 1809 (build 17763) or later / Windows 11, x64** — Supported desktop systems.
+- **.NET 10 / WPF** — The no-runtime package requires the .NET 10 Desktop Runtime x64; the self-contained package includes it.
 - **CMake / Visual Studio C++ toolchain** — Builds the native LMDB library shipped with PaperTodo.
 - **[LMDB](https://github.com/LMDB/lmdb)** — Single-file transactional note image storage.
 - **[AvalonEdit](https://github.com/icsharpcode/AvalonEdit)** — Note editing and light Markdown highlighting.

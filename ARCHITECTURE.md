@@ -65,7 +65,7 @@ PaperTodo.exe
 | 单纸片 UI | `PaperWindow` | paper WPF shell、普通交互、provider 选择、子系统适配 |
 | Todo 任务实体化 | `TodoTaskLifecycle` | 统一判定占位行何时首次成为任务并记录调用方提供的创建时刻；GUI、批量与外部命令复用同一语义 |
 | Todo 撤销历史 | `TodoUndoHistory` | 以 WPF 无关的任务快照统一维护单张待办纸的 Undo/Redo；快照包含任务核心字段和跨纸片关系 |
-| 全局 Todo 投影 | `TodoBoardProjection` + `TodoBoardFilterState` / `TodoBoardSortRules` + Board 类型的 `PaperWindow` body + `AppController` | 纯投影模块从 `State.Papers[].Items` 收集任务并统一执行跨视图搜索、结构化筛选、表格多级排序和月历活动跨度查询；Board body 只编辑查询状态、渲染与导航，仍不保存任务副本 |
+| 全局 Todo 投影 | `TodoBoardProjection` + `TodoBoardActivityCalendarLayout` / `TodoBoardPlanningTimelineLayout` + `TodoBoardFilterState` / `TodoBoardSortRules` + Board 类型的 `PaperWindow` body + `AppController` | 纯投影模块从 `State.Papers[].Items` 收集任务并统一执行跨视图搜索、结构化筛选、表格多级排序、活动月历和计划时间线查询；Board body 只编辑查询状态、渲染与导航，仍不保存任务副本 |
 | paper-body session | `PaperBodyHost` | 当前 `IPaperBodySession` 的 attach / invoke / commit / dispose，以及 opt-in 完整 Markdown 导出的 commit / lifecycle 校验 |
 | 插件发现与合同 | `PaperBodyPluginRegistry` | builtin / Native / Web provider 发现、校验、激活 |
 | Edge 单纸片业务状态 | `EdgeCapsuleReducer` + `EdgeCapsuleModel` | 单纸片 typed intent 到完整 model 的原子变化 |
