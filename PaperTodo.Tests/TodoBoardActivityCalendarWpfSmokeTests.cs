@@ -4,6 +4,7 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
+using PaperTodo.Plugin;
 
 namespace PaperTodo.Tests;
 
@@ -111,15 +112,13 @@ public sealed class TodoBoardActivityCalendarWpfSmokeTests
             controller.State.Papers.Add(todo);
             controller.State.Papers.Add(board);
 
-            boardWindow = new PaperWindow(board, controller)
-            {
-                ShowActivated = false,
-                ShowInTaskbar = false,
-                Left = -30000,
-                Top = -30000,
-                Width = 900,
-                Height = 440
-            };
+            boardWindow = controller.GetOrCreatePaperWindow(board);
+            boardWindow.ShowActivated = false;
+            boardWindow.ShowInTaskbar = false;
+            boardWindow.Left = -30000;
+            boardWindow.Top = -30000;
+            boardWindow.Width = 900;
+            boardWindow.Height = 440;
             boardWindow.Show();
             Drain(boardWindow.Dispatcher);
 
@@ -151,6 +150,10 @@ public sealed class TodoBoardActivityCalendarWpfSmokeTests
             Drain(boardWindow.Dispatcher);
             Assert.Empty(PopupTaskButtons());
 
+            overflow = Descendants<Button>(boardWindow)
+                .First(button =>
+                    AutomationProperties.GetName(button) is { } name &&
+                    name == Strings.Format("TodoBoardCalendarOverflowToolTip", 7));
             overflow.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Drain(boardWindow.Dispatcher);
             var popupTask = PopupTaskButtons()
@@ -211,6 +214,33 @@ public sealed class TodoBoardActivityCalendarWpfSmokeTests
             Drain(boardWindow.Dispatcher);
             Assert.True(todo.IsVisible);
             Assert.False(todo.IsCollapsed);
+
+            controller.PaperCommands.UpdateTodo(
+                new UpdateTodoRequest
+                {
+                    PaperId = todo.Id,
+                    TodoId = items[2].Id,
+                    Planning = new TodoPlanningUpdate(
+                        DateOnly.FromDateTime(DateTime.Today),
+                        null)
+                },
+                PaperOperationContext.Mcp());
+            Drain(boardWindow.Dispatcher);
+            Assert.Equal(DateOnly.FromDateTime(DateTime.Today), items[2].PlannedStartDate);
+            Assert.Equal(TodoBoardViews.Timeline, board.BoardView);
+            var planningNames = Descendants<Border>(boardWindow)
+                .Select(AutomationProperties.GetName)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .ToList();
+            Assert.True(
+                planningNames.Any(name => name.Contains("Task 3", StringComparison.Ordinal)),
+                $"Expected Task 3 planning bar. Visible names: {string.Join(" | ", planningNames)}");
+            Assert.Equal(
+                4,
+                Descendants<Button>(boardWindow).Count(button =>
+                    AutomationProperties.GetName(button).StartsWith(
+                        Strings.Get("TodoBoardTimelineUnscheduledAutomationPrefix"),
+                        StringComparison.Ordinal)));
         }
         finally
         {

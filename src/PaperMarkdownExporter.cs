@@ -100,6 +100,14 @@ internal static class PaperMarkdownExporter
                 .AppendLine(item.CompletedAt.HasValue
                     ? FormatTimestamp(item.CompletedAt.Value)
                     : Strings.Get("ExportMarkdownNotCompleted"));
+            markdown.Append("  - ")
+                .Append(Strings.Get("ExportMarkdownPlannedStart"))
+                .Append(": ")
+                .AppendLine(FormatPlanningDate(item.PlannedStartDate));
+            markdown.Append("  - ")
+                .Append(Strings.Get("ExportMarkdownDue"))
+                .Append(": ")
+                .AppendLine(FormatPlanningDate(item.DueDate));
 
             if (!string.IsNullOrWhiteSpace(item.Note))
             {
@@ -146,6 +154,11 @@ internal static class PaperMarkdownExporter
         value.ToLocalTime().ToString(
             "yyyy-MM-dd HH:mm:ss zzz",
             CultureInfo.InvariantCulture);
+
+    private static string FormatPlanningDate(DateOnly? value) =>
+        value.HasValue
+            ? value.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            : Strings.Get("ExportMarkdownNotSet");
 
     private static string EscapeInline(string value) =>
         (value ?? "")

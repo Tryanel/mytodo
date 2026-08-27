@@ -2,10 +2,10 @@
 
 本文是 **当前 PaperTodo 插件开发手册**。只描述现在可用的插件合同、运行边界、构建方式和示例，不记录协议演进历史。
 
-当前宿主只接受：
+当前宿主接受协议 1.8～1.9；新插件应声明当前协议：
 
 ```json
-"apiVersion": "1.8"
+"apiVersion": "1.9"
 ```
 
 插件公开类型以 [`../PaperTodo.Plugin.Abstractions/`](../PaperTodo.Plugin.Abstractions/) 为编译期合同；宿主实际校验和运行行为以当前代码为准。需要理解 PaperTodo 内部 ownership 时再看 [`../ARCHITECTURE.md`](../ARCHITECTURE.md)，插件作者不需要先阅读主程序架构才能开始开发。
@@ -48,7 +48,7 @@ plugins/com.example.hello/
   "id": "com.example.hello",
   "name": "Hello",
   "version": "1.0.0",
-  "apiVersion": "1.8",
+  "apiVersion": "1.9",
   "stateVersion": 1,
   "entry": "web/index.html"
 }
@@ -115,7 +115,7 @@ public sealed class HelloPlugin : IPaperBodyPlugin
     public string Id => "com.example.hello-native";
     public string DisplayName => "Hello Native";
     public Version Version => new(1, 0, 0);
-    public string ApiVersion => "1.8";
+    public string ApiVersion => "1.9";
     public int StateVersion => 1;
     public PaperBodyRuntimeRequirements RuntimeRequirements =>
         PaperBodyRuntimeRequirements.None;
@@ -167,7 +167,7 @@ Native `plugin.json`：
   "id": "com.example.hello-native",
   "name": "Hello Native",
   "version": "1.0.0",
-  "apiVersion": "1.8",
+  "apiVersion": "1.9",
   "stateVersion": 1,
   "entry": "HelloPlugin.dll"
 }
@@ -237,7 +237,7 @@ Native 最终目录只保留运行所需内容。不要分发无必要的 PDB/XM
 | `name` | 显示名称；为空时回退到 ID |
 | `description` | 插件说明 |
 | `version` | 插件版本，必须能解析为 `Version` |
-| `apiVersion` | 当前必须为字符串 `"1.8"` |
+| `apiVersion` | 当前推荐字符串 `"1.9"`；宿主仍兼容不使用 1.9 新合同成员的 `"1.8"` 插件 |
 | `stateVersion` | per-paper state 版本，至少为 1 |
 | `entry` | Web 主页面或 Native 入口 DLL，必须位于插件目录内 |
 | `miniEntry` | 可选，仅 Web；专属 Edge Mini 页面 |
@@ -260,7 +260,7 @@ Native 最终目录只保留运行所需内容。不要分发无必要的 PDB/XM
   "id": "com.example.weather",
   "name": "天气",
   "version": "1.0.0",
-  "apiVersion": "1.8",
+  "apiVersion": "1.9",
   "stateVersion": 1,
   "entry": "web/index.html",
   "miniEntry": "web/mini.html",
@@ -543,12 +543,40 @@ notes.write
 几个容易遗漏的权限组合：
 
 - 创建带正文的 Note：除了 `papers.create` 还需要 `notes.append`；
-- 创建/追加带完成状态、提醒或 `linkedPaperId` 的 Todo：还需要 `todos.update`；
+- 创建/追加带完成状态、提醒、计划日期或 `linkedPaperId` 的 Todo：还需要 `todos.update`；
 - `todos.setReminder` 使用 `todos.update`；
 - `notes.write` 的 append/fill-blank 使用 `notes.append`，replace 使用 `notes.replace`；
 - 插件不能删除当前承载自己 active session 的 paper。
 
 Observe 权限独立于 Read 权限。没有对应 read 权限时，事件仍可按 observe 权限投递，但敏感字段会被宿主裁剪。
+
+协议 1.9 新增 Todo 快照的 `PlannedStartDate` / `DueDate`（Web 为 `plannedStartDate` / `dueDate`），它们是可空的无时区日历日期。创建或追加时可直接放在 `TodoCreateItem`；更新时只有显式提供 `Planning` patch 才会改变已有计划，两个值都为 `null` 表示清空。宿主用与 Todo UI 相同的规则拒绝“开始日晚于截止日”，保存失败时不会保留内存中的临时日期。使用这些成员的 Native 或 Web 插件必须声明 `apiVersion: "1.9"`，不能伪装成可在旧 1.8 宿主运行。
+
+Native：
+
+```csharp
+context.Workspace.UpdateTodo(new UpdateTodoRequest
+{
+    PaperId = paperId,
+    TodoId = todoId,
+    Planning = new TodoPlanningUpdate(
+        new DateOnly(2026, 9, 1),
+        new DateOnly(2026, 9, 30))
+});
+```
+
+Web：
+
+```js
+await papertodo.workspace.request('todos.update', {
+  paperId,
+  todoId,
+  planning: {
+    plannedStartDate: '2026-09-01',
+    dueDate: '2026-09-30'
+  }
+});
+```
 
 Native：
 
@@ -934,7 +962,7 @@ Native 插件是 fully trusted / unsandboxed .NET/WPF 代码，与 PaperTodo 当
 
 ### Manifest
 
-- `apiVersion` 不是 `"1.8"`；
+- `apiVersion` 不在宿主支持的 `"1.8"`～`"1.9"` 范围内，或使用计划日期合同却仍声明 `"1.8"`；
 - 插件目录名和 `id` 不一致；
 - `id` 使用非法字符或保留 ID `data`；
 - `miniSize` 没有对应 `miniEntry`；
@@ -978,7 +1006,7 @@ Native 插件是 fully trusted / unsandboxed .NET/WPF 代码，与 PaperTodo 当
 
 ## 13. 提交示例插件前
 
-- `plugin.json` 使用当前 `apiVersion: "1.8"`；
+- `plugin.json` 使用当前 `apiVersion: "1.9"`；
 - Native manifest 与入口 DLL metadata/runtime requirements 一致；
 - Native 使用统一 build/install 脚本跑通；
 - 最终 `plugins/<id>/` 不包含 PDB/XML/重复 shared assemblies；

@@ -175,6 +175,9 @@ public static class Strings
             ["ExportMarkdownCreated"] = ["创建时间", "Created", "作成日時", "생성 시간"],
             ["ExportMarkdownCompleted"] = ["完成时间", "Completed", "完了日時", "완료 시간"],
             ["ExportMarkdownNotCompleted"] = ["尚未完成", "Not completed", "未完了", "미완료"],
+            ["ExportMarkdownPlannedStart"] = ["计划开始日", "Planned start", "計画開始日", "계획 시작일"],
+            ["ExportMarkdownDue"] = ["截止日", "Due date", "期限日", "마감일"],
+            ["ExportMarkdownNotSet"] = ["未设置", "Not set", "未設定", "설정 안 함"],
             ["ExportMarkdownPaperContent"] = ["纸片内容", "Paper content", "紙の内容", "메모지 내용"]
         };
 
