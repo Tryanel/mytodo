@@ -688,15 +688,29 @@ public sealed partial class PaperWindow : Window
                 (Action)ApplyDeferredStartupSystemVisibility,
                 System.Windows.Threading.DispatcherPriority.Normal);
         };
-        LocationChanged += (_, _) => HandleWindowGeometryChanged();
+        LocationChanged += (_, _) =>
+        {
+            CloseTodoBoardCalendarOverflow();
+            HandleWindowGeometryChanged();
+        };
         SizeChanged += (_, _) =>
         {
+            CloseTodoBoardCalendarOverflow();
             HandleWindowGeometryChanged();
             UpdateTopBarResponsiveLayout();
+            if (_paper.Type == PaperTypes.Board)
+            {
+                ScheduleTodoBoardRefresh();
+            }
         };
-        DpiChanged += (_, _) => NotifyCurrentPaperBodyDpiChanged();
+        DpiChanged += (_, _) =>
+        {
+            CloseTodoBoardCalendarOverflow();
+            NotifyCurrentPaperBodyDpiChanged();
+        };
         StateChanged += (_, _) =>
         {
+            CloseTodoBoardCalendarOverflow();
             RefreshSnappedPresentation(forceApply: true);
             if (_paper.Type == PaperTypes.Note)
             {
