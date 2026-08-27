@@ -148,6 +148,8 @@ Markdown 中的 Note 图片只通过 PaperTodo 内部 `i:` asset URI 引用宿�
 
 `PaperWindow` 是单纸片 UI owner，负责普通 paper shell、Todo/Note 交互、标题/工具栏、窗口行为和各子系统适配。
 
+每张 Todo paper 至多持有一个 `TodoNoteEditorSession`。任务备注编辑器是由 `PaperWindow` 逻辑持有、但不设置 WPF `Owner` 的独立非模态 surface，因此 owning paper 折叠或隐藏不会连带隐藏草稿；切换与关闭意图由 session 统一决策，实际保存仍按稳定 `PaperItem.Id` 回到 `PaperWindow` 的撤销、持久化和行同步边界。
+
 Edge Capsule 启用后，一张纸的可见 surface 不再等价于一个 `PaperWindow` HWND：docked capsule 由 `EdgeCapsuleHost` 提供，跨队列/脱墙拖拽可以临时使用 `EdgeCapsuleDragWindow`；这些 surface 仍引用同一 `PaperData`，不复制业务对象。
 
 内置 Markdown Note 的编辑态和浏览态复用同一个 `MarkdownTextBox`，通过 interaction/presentation 状态切换，而不是维护两套正文 surface。

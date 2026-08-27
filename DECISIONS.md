@@ -37,6 +37,7 @@
 | D-022 | 纸片持有任务，全局看板只做聚合投影 | Superseded by D-023 | 产品边界 / Todo |
 | D-023 | 全局看板成为单例 Board paper | Accepted | 产品边界 / Todo / UI |
 | D-024 | 计划时段与活动跨度分离 | Proposed | 产品边界 / Todo / 时间视图 |
+| D-025 | 任务备注编辑器使用逻辑 ownership，不使用 WPF owned window | Accepted | Todo / 窗口生命周期 |
 
 ## 维护规则
 
@@ -829,3 +830,34 @@ Board 每次从 Todo `PaperData.Items` 生成投影。任务行和日历项只�
 - `src/TodoBoardProjection.cs` / `src/TodoBoardPlanningTimelineLayout.cs` / `src/PaperWindow.TodoBoardPlanningTimeline.cs`：共享查询和只读计划时间线。
 - `src/PaperCommandService.cs` / `src/McpCommandService.cs` / `src/PaperBodyPluginHostApi.cs`：外部快照、计划日期 mutation、保存失败回滚与事件边界。
 - `src/PaperMarkdownExporter.cs`：Todo 与 Board 的计划日期全量导出。
+
+---
+
+## D-025 — 任务备注编辑器使用逻辑 ownership，不使用 WPF owned window
+
+**Status:** Accepted
+
+### Context
+
+任务备注需要保持非模态，以便用户边记录边操作原纸片、其他纸片和边缘胶囊。此前编辑器虽然用 `Show()` 打开，但仍把 Todo `PaperWindow` 设置为 WPF `Owner`；WPF 会在 owner 隐藏时连带隐藏 owned window，导致纸片收起或隐藏后草稿窗口像是丢失。旧入口在已有编辑器时也只会激活旧窗口，无法明确处理用户点击的另一任务。
+
+### Decision
+
+每张 Todo paper 只建立一个 `TodoNoteEditorSession`，由它统一持有稳定任务身份、原始备注、脏草稿以及待处理的切换/关闭意图。编辑 surface 不设置 WPF `Owner`，但生命周期、主题和置顶同步仍由 owning `PaperWindow` 负责。脏草稿切换和普通关闭都在编辑器内部提供保存、放弃和取消/继续编辑分支；保存按稳定 `PaperItem.Id` 回到原纸片的一次撤销与保存边界，不展开或聚焦已经折叠、隐藏的纸片。
+
+### Why
+
+原生 window ownership 与产品中的业务 ownership 含义不同：前者会施加连带隐藏和最小化行为，后者需要保持“草稿属于这张纸”但允许编辑器继续独立可见。把草稿决策收敛到一个 session，也避免鼠标入口、关闭按钮和 Esc 各自复制一套不一致的保存逻辑。
+
+### Rejected / Do not reintroduce
+
+- 不把任务备注编辑器重新设为 Todo `PaperWindow` 的 WPF owned window。
+- 不在纸片折叠或普通隐藏时自动关闭任务备注编辑器。
+- 不让编辑 surface 绕过 owning `PaperWindow` 直接持久化或维护第二份任务备注。
+
+### Evidence
+
+- `src/TodoNoteEditorSession.cs`：稳定身份、脏状态与切换/关闭决策。
+- `src/TodoNoteDialog.cs`：owner-independent 非模态 surface 和编辑器内确认流程。
+- `src/PaperWindow.TodoNotes.cs` / `src/PaperWindow.Lifecycle.cs`：逻辑 ownership、保存与 hide 生命周期。
+- `PaperTodo.Tests/TodoNoteEditorSessionTests.cs` / `PaperTodo.Tests/TodoNoteEditorWpfSmokeTests.cs`。

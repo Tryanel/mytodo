@@ -125,7 +125,6 @@ public sealed partial class PaperWindow
     {
         _controller.CompleteEdgeCapsuleQueueCompositionProxyFor(this);
         CommitPendingEditsForSave();
-        CloseTodoNoteEditor();
         CancelExperimentalTetherPresentation(showMain: false);
         DetachExperimentalWindowAttachment(savePosition: false);
         SettlePaperFormPresentation();

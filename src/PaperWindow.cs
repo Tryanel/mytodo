@@ -1554,6 +1554,7 @@ public sealed partial class PaperWindow : Window
 
         InitializeThemeResources();
         _experimentalTetherCapsule?.UpdateTheme();
+        RefreshTodoNoteEditorTheme();
         RefreshThemedContextMenus();
 
         var canAnimateTheme = _controller.State.EnableAnimations &&
@@ -2699,6 +2700,7 @@ public sealed partial class PaperWindow : Window
 
         RefreshDeepCapsuleSlotTopmost();
         RefreshTopBarDragFeedbackTopmost();
+        RefreshTodoNoteEditorTopmost(effectiveTopmost);
     }
 
     internal void RefreshDeepCapsuleSlotTopmost()

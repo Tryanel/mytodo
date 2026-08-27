@@ -104,11 +104,10 @@ public sealed class TodoCompletionRecordPromptWpfSmokeTests
             });
             Drain(window.Dispatcher);
             Assert.Null(window.TodoCompletionRecordPromptItemId);
-            var editorWindow = Assert.Single(
-                window.OwnedWindows.Cast<Window>(),
-                candidate =>
-                    candidate.IsVisible &&
-                    candidate.Title == Strings.Get("TodoNoteTitle"));
+            var editorWindow = Assert.IsType<TodoNoteDialog>(
+                window.TodoNoteEditorWindow);
+            Assert.True(editorWindow.IsVisible);
+            Assert.Empty(window.OwnedWindows.Cast<Window>());
             Assert.Equal(items[0].Id, window.TodoNoteEditorItemId);
 
             var otherRow = TodoRow(window, items[1].Id);
