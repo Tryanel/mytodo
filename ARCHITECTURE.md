@@ -86,6 +86,8 @@ PaperTodo.exe
 
 `AppController` 尚未完成启动时收到的单实例命令先排队，待 controller 可用后再执行。普通纸片窗口全部关闭不等于退出应用，进程使用显式 shutdown 生命周期。
 
+正常退出在进入 `Exiting` 生命周期、停止运行时或释放窗口之前，先集中收集所有脏任务备注会话并暂存用户选择；任一取消都会恢复全部会话并保持 `Running`。选择保存的草稿只在整批决策齐全后临时投影到 authoritative items，同步保存失败会回滚整批投影并保留可重试草稿；只有同步保存成功后才提交会话并跨过 shutdown boundary。Windows 注销/关机若触发了仍需交互的 preflight，会取消当次系统 session-ending 请求，避免系统绕过该边界。crash boundary 不复用这条普通退出 preflight，仍不做最终强存。
+
 ### 3.2 MCP
 
 `--mcp` 是同一可执行文件的独立 bridge 模式。它在 GUI Mutex 之前分流，通过 stdio 暴露 MCP server；GUI 主宿主内部的 MCP runtime 由 `AppController` 管理。
@@ -148,7 +150,7 @@ Markdown 中的 Note 图片只通过 PaperTodo 内部 `i:` asset URI 引用宿�
 
 `PaperWindow` 是单纸片 UI owner，负责普通 paper shell、Todo/Note 交互、标题/工具栏、窗口行为和各子系统适配。
 
-每张 Todo paper 至多持有一个 `TodoNoteEditorSession`。任务备注编辑器是由 `PaperWindow` 逻辑持有、但不设置 WPF `Owner` 的独立非模态 surface，因此 owning paper 折叠或隐藏不会连带隐藏草稿；切换与关闭意图由 session 统一决策，实际保存仍按稳定 `PaperItem.Id` 回到 `PaperWindow` 的撤销、持久化和行同步边界。
+每张 Todo paper 至多持有一个 `TodoNoteEditorSession`。任务备注编辑器是由 `PaperWindow` 逻辑持有、但不设置 WPF `Owner` 的独立非模态 surface，因此 owning paper 折叠或隐藏不会连带隐藏草稿；切换、关闭、删除与退出意图由 session 统一决策，实际保存仍按稳定 `PaperItem.Id` 回到 `PaperWindow` 的撤销、持久化和行同步边界。GUI 删除在 mutation 前完成草稿决策；外部命令若先成功删除 authoritative 任务或纸片，原编辑器会脱离 active session、变为只读失效结果，不创建替代对象。
 
 Edge Capsule 启用后，一张纸的可见 surface 不再等价于一个 `PaperWindow` HWND：docked capsule 由 `EdgeCapsuleHost` 提供，跨队列/脱墙拖拽可以临时使用 `EdgeCapsuleDragWindow`；这些 surface 仍引用同一 `PaperData`，不复制业务对象。
 

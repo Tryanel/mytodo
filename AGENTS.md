@@ -132,6 +132,7 @@ Markdown 当前保持轻量。若要扩展到网络图片、表格、附件、�
 
 - 多行粘贴待办形成一次用户操作时，只形成一次撤销快照。
 - Todo 备注、创建时间和完成时间属于 `PaperItem` 核心数据；完成/恢复必须通过统一完成状态语义维护 `CompletedAt`，看板与 Markdown 导出只能读取这份数据，不建立副本。
+- 删除任务、删除 owning Todo paper 和正常退出必须在 mutation / shutdown 前协调脏任务备注会话；取消或保存失败不能跨过破坏性边界。外部删除先成功时只让原草稿失效，不把它重定向到占位或替代任务；crash boundary 不走普通退出草稿 preflight。
 - `PaperItem.LinkedPaperId` 是跨纸片关系，不要只在单个 UI 路径里清理。
 - 内置 Note 编辑/浏览共享一个 `MarkdownTextBox`；不要拆成两套独立文本 surface（见 D-019）。`MarkdownTextBox` 长度上限属于 WPF 布局/渲染保护，不要无依据删除。
 - 用户可见文本同步中文、英文、日文、韩文资源；`ResourceTextVersion` 只是人工检查标记，不参与运行时逻辑。

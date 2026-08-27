@@ -77,6 +77,132 @@ public sealed partial class PaperWindow
 
     internal string? TodoNoteEditorItemId => _todoNoteEditor?.ItemId;
     internal TodoNoteDialog? TodoNoteEditorWindow => _todoNoteEditor;
+    internal bool HasDirtyTodoNoteEditor => _todoNoteEditor?.IsDirty == true;
+
+    private bool DeferTodoNoteDestructiveAction(
+        TodoNoteDraftIntent intent,
+        string? targetItemId,
+        Action<TodoNoteDraftResolution> resolved)
+    {
+        var editor = _todoNoteEditor;
+        if (editor == null ||
+            (targetItemId != null &&
+             !string.Equals(editor.ItemId, targetItemId, StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
+        if (!editor.IsDirty)
+        {
+            CloseTodoNoteEditor();
+            return false;
+        }
+
+        editor.RequestDestructiveAction(
+            intent,
+            stageDecision: false,
+            resolved);
+        return true;
+    }
+
+    internal bool DeferTodoNotePaperDeletion(
+        Action<TodoNoteDraftResolution> resolved) =>
+        DeferTodoNoteDestructiveAction(
+            TodoNoteDraftIntent.DeletePaper,
+            targetItemId: null,
+            resolved);
+
+    private bool DeferTodoNoteTaskDeletion(
+        string itemId,
+        Action<TodoNoteDraftResolution> resolved) =>
+        DeferTodoNoteDestructiveAction(
+            TodoNoteDraftIntent.DeleteTask,
+            itemId,
+            resolved);
+
+    internal void RequestTodoNoteExitDecision(
+        Action<TodoNoteDraftResolution> resolved)
+    {
+        var editor = _todoNoteEditor;
+        if (editor == null || !editor.IsDirty)
+        {
+            resolved(TodoNoteDraftResolution.Discard);
+            return;
+        }
+        editor.RequestDestructiveAction(
+            TodoNoteDraftIntent.Exit,
+            stageDecision: true,
+            resolved);
+    }
+
+    internal bool CommitTodoNoteExitDecision(
+        TodoNoteDraftResolution resolution) =>
+        _todoNoteEditor?.CommitStagedDestructiveDecision(resolution) == true;
+
+    internal bool PrepareTodoNoteExitDecision(
+        TodoNoteDraftResolution resolution,
+        out TodoNoteExitSaveMutation? saveMutation)
+    {
+        saveMutation = null;
+        var editor = _todoNoteEditor;
+        if (editor?.PrepareStagedDestructiveDecision(resolution) != true)
+        {
+            return false;
+        }
+        if (resolution != TodoNoteDraftResolution.Save)
+        {
+            return true;
+        }
+        if (!editor.TryGetStagedSave(out var itemId, out var draft))
+        {
+            return false;
+        }
+
+        var item = _paper.Items.FirstOrDefault(candidate =>
+            string.Equals(candidate.Id, itemId, StringComparison.Ordinal));
+        if (item == null)
+        {
+            return false;
+        }
+
+        saveMutation = new TodoNoteExitSaveMutation(item, draft);
+        return true;
+    }
+
+    internal void CancelTodoNoteExitDecision() =>
+        _todoNoteEditor?.CancelStagedDestructiveDecision();
+
+    internal void InvalidateTodoNoteEditorIfTargetMissing()
+    {
+        var editor = _todoNoteEditor;
+        if (editor == null || _paper.Items.Any(item =>
+                string.Equals(item.Id, editor.ItemId, StringComparison.Ordinal)))
+        {
+            return;
+        }
+        DetachInvalidTodoNoteEditor(editor, TodoNoteInvalidationReason.TaskDeleted);
+    }
+
+    internal void InvalidateTodoNoteEditorForPaperDeletion()
+    {
+        if (_todoNoteEditor is { } editor)
+        {
+            DetachInvalidTodoNoteEditor(editor, TodoNoteInvalidationReason.PaperDeleted);
+        }
+    }
+
+    private void DetachInvalidTodoNoteEditor(
+        TodoNoteDialog editor,
+        TodoNoteInvalidationReason reason)
+    {
+        if (!ReferenceEquals(_todoNoteEditor, editor))
+        {
+            return;
+        }
+        _todoNoteEditor = null;
+        editor.Invalidate(reason);
+        RefreshExperimentalFocusPresentation();
+    }
 
     private void CloseTodoNoteEditor()
     {

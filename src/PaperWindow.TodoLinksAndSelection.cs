@@ -731,10 +731,43 @@ public sealed partial class PaperWindow
         return true;
     }
 
-    private void ApplyDoneToSelectedTodos(bool done)
+    private void ApplyDoneToSelectedTodos(
+        bool done,
+        bool noteDraftResolved = false,
+        IReadOnlyCollection<string>? targetItemIds = null)
     {
-        var selected = SelectedTodoItems();
+        targetItemIds ??= SelectedTodoItems()
+            .Select(item => item.Id)
+            .ToArray();
+        var selected = OrderedItems()
+            .Where(item => targetItemIds.Contains(item.Id, StringComparer.Ordinal))
+            .ToList();
         if (selected.Count == 0 || selected.All(item => item.Done == done))
+        {
+            return;
+        }
+
+        var editorItemId = TodoNoteEditorItemId;
+        if (!noteDraftResolved &&
+            done &&
+            _controller.State.AutoClearCompletedTodos &&
+            editorItemId != null &&
+            selected.Any(item => string.Equals(
+                item.Id,
+                editorItemId,
+                StringComparison.Ordinal)) &&
+            DeferTodoNoteTaskDeletion(
+                editorItemId,
+                resolution =>
+                {
+                    if (resolution != TodoNoteDraftResolution.Cancel)
+                    {
+                        ApplyDoneToSelectedTodos(
+                            done,
+                            noteDraftResolved: true,
+                            targetItemIds);
+                    }
+                }))
         {
             return;
         }
@@ -779,10 +812,39 @@ public sealed partial class PaperWindow
         RefreshCapsuleEligibilityForLinkedPaperChanges(previousItems);
     }
 
-    private void DeleteSelectedTodoItems()
+    private void DeleteSelectedTodoItems(
+        bool noteDraftResolved = false,
+        IReadOnlyCollection<string>? targetItemIds = null)
     {
-        var selected = SelectedTodoItems();
+        targetItemIds ??= SelectedTodoItems()
+            .Select(item => item.Id)
+            .ToArray();
+        var selected = OrderedItems()
+            .Where(item => targetItemIds.Contains(item.Id, StringComparer.Ordinal))
+            .ToList();
         if (selected.Count == 0)
+        {
+            return;
+        }
+
+        var editorItemId = TodoNoteEditorItemId;
+        if (!noteDraftResolved &&
+            editorItemId != null &&
+            selected.Any(item => string.Equals(
+                item.Id,
+                editorItemId,
+                StringComparison.Ordinal)) &&
+            DeferTodoNoteTaskDeletion(
+                editorItemId,
+                resolution =>
+                {
+                    if (resolution != TodoNoteDraftResolution.Cancel)
+                    {
+                        DeleteSelectedTodoItems(
+                            noteDraftResolved: true,
+                            targetItemIds);
+                    }
+                }))
         {
             return;
         }

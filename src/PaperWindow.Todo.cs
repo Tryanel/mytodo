@@ -1182,35 +1182,60 @@ public sealed partial class PaperWindow
             !TodoRules.HasNonTextContent(item) &&
             _paper.Items.Count > 1)
         {
-            var previous = PreviousItem(item);
-            var next = NextItem(item);
-            var focusTarget = previous?.Id ?? next?.Id;
             _suppressTodoBackspaceUntilKeyUp = true;
-            var previousItems = CloneItems(_paper.Items);
-
-            // 退格删除不播放动画，直接删除
-            PushUndoSnapshot();
-            _paper.Items.RemoveAll(i => i.Id == item.Id);
-
-            if (_paper.Items.Count == 0)
+            if (!DeferTodoNoteTaskDeletion(
+                    item.Id,
+                    resolution =>
+                    {
+                        if (resolution == TodoNoteDraftResolution.Cancel)
+                        {
+                            return;
+                        }
+                        var current = _paper.Items.FirstOrDefault(candidate =>
+                            string.Equals(candidate.Id, item.Id, StringComparison.Ordinal));
+                        if (current != null)
+                        {
+                            DeleteTodoFromBackspace(current);
+                        }
+                    }))
             {
-                var replacement = new PaperItem();
-                _paper.Items.Add(replacement);
-                focusTarget = replacement.Id;
+                DeleteTodoFromBackspace(item);
             }
-
-            NormalizeTodoItems();
-            NormalizeOrders();
-            _controller.MarkDirty();
-            _controller.NotifyTodoReminderCollectionChanged();
-
-            var focusPlacement = previous != null ? TodoFocusPlacement.End : TodoFocusPlacement.Start;
-            ReconcileTodoRows(
-                focusItemId: focusTarget,
-                focusPlacement: focusPlacement);
-            RefreshCapsuleEligibilityForLinkedPaperChanges(previousItems);
             e.Handled = true;
         }
+    }
+
+    private void DeleteTodoFromBackspace(PaperItem item)
+    {
+        var previous = PreviousItem(item);
+        var next = NextItem(item);
+        var focusTarget = previous?.Id ?? next?.Id;
+        var previousItems = CloneItems(_paper.Items);
+
+        // Backspace deletion skips the row animation, but records the post-draft authoritative
+        // task so one Undo restores the latest note and relationships.
+        PushUndoSnapshot();
+        _paper.Items.RemoveAll(i => i.Id == item.Id);
+
+        if (_paper.Items.Count == 0)
+        {
+            var replacement = new PaperItem();
+            _paper.Items.Add(replacement);
+            focusTarget = replacement.Id;
+        }
+
+        NormalizeTodoItems();
+        NormalizeOrders();
+        _controller.MarkDirty();
+        _controller.NotifyTodoReminderCollectionChanged();
+
+        var focusPlacement = previous != null
+            ? TodoFocusPlacement.End
+            : TodoFocusPlacement.Start;
+        ReconcileTodoRows(
+            focusItemId: focusTarget,
+            focusPlacement: focusPlacement);
+        RefreshCapsuleEligibilityForLinkedPaperChanges(previousItems);
     }
 
     private void HandleTodoPaste(DataObjectPastingEventArgs e, PaperItem item, TodoTextBox box)
@@ -1393,8 +1418,39 @@ public sealed partial class PaperWindow
         return newItem;
     }
 
-    private void RemoveItem(PaperItem item, bool rebuild = true, string? focusItemId = null, bool pushUndo = true)
+    private void RemoveItem(
+        PaperItem item,
+        bool rebuild = true,
+        string? focusItemId = null,
+        bool pushUndo = true,
+        bool noteDraftResolved = false)
     {
+        if (!noteDraftResolved && DeferTodoNoteTaskDeletion(
+                item.Id,
+                resolution =>
+                {
+                    if (resolution == TodoNoteDraftResolution.Cancel)
+                    {
+                        return;
+                    }
+                    var current = _paper.Items.FirstOrDefault(candidate =>
+                        string.Equals(candidate.Id, item.Id, StringComparison.Ordinal));
+                    if (current == null)
+                    {
+                        InvalidateTodoNoteEditorIfTargetMissing();
+                        return;
+                    }
+                    RemoveItem(
+                        current,
+                        rebuild,
+                        focusItemId,
+                        pushUndo || resolution == TodoNoteDraftResolution.Save,
+                        noteDraftResolved: true);
+                }))
+        {
+            return;
+        }
+
         DismissTodoCompletionRecordPromptForItem(item.Id);
         if (pushUndo)
         {
@@ -1474,7 +1530,9 @@ public sealed partial class PaperWindow
         }
     }
 
-    private void ClearDoneItems()
+    private void ClearDoneItems(
+        bool noteDraftResolved = false,
+        IReadOnlyCollection<string>? targetItemIds = null)
     {
         if (_paper.Type != PaperTypes.Todo)
         {
@@ -1482,8 +1540,38 @@ public sealed partial class PaperWindow
         }
 
         var focusedId = CurrentFocusedTodoItemId();
-        var completedItems = OrderedItems().Where(i => i.Done).ToList();
+        targetItemIds ??= OrderedItems()
+            .Where(item => item.Done)
+            .Select(item => item.Id)
+            .ToArray();
+        var completedItems = OrderedItems()
+            .Where(item =>
+                item.Done &&
+                targetItemIds.Contains(item.Id, StringComparer.Ordinal))
+            .ToList();
         if (completedItems.Count == 0)
+        {
+            return;
+        }
+
+        var editorItemId = TodoNoteEditorItemId;
+        if (!noteDraftResolved &&
+            editorItemId != null &&
+            completedItems.Any(item => string.Equals(
+                item.Id,
+                editorItemId,
+                StringComparison.Ordinal)) &&
+            DeferTodoNoteTaskDeletion(
+                editorItemId,
+                resolution =>
+                {
+                    if (resolution != TodoNoteDraftResolution.Cancel)
+                    {
+                        ClearDoneItems(
+                            noteDraftResolved: true,
+                            targetItemIds);
+                    }
+                }))
         {
             return;
         }

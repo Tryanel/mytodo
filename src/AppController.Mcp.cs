@@ -133,6 +133,7 @@ public sealed partial class AppController
     {
         if (_windows.TryGetValue(paper.Id, out var window))
         {
+            window.InvalidateTodoNoteEditorIfTargetMissing();
             window.RefreshTodoRowsForExternalChange();
         }
         NotifyTodoReminderCollectionChanged();
@@ -160,6 +161,7 @@ public sealed partial class AppController
         if (_windows.TryGetValue(deleted.Id, out var window))
         {
             RestoreExperimentalPassiveForWindow(window);
+            window.InvalidateTodoNoteEditorForPaperDeletion();
             window.CloseForReal(saveBeforeClose: false);
             _windows.Remove(deleted.Id);
         }

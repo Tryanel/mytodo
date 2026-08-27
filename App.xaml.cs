@@ -118,7 +118,13 @@ public partial class App : Application
             return;
         }
 
-        SessionEnding += (s, args) => _controller?.Exit();
+        SessionEnding += (_, args) =>
+        {
+            if (_controller?.HandleSystemSessionEnding() == true)
+            {
+                args.Cancel = true;
+            }
+        };
         var handlesInitialVisibility = startupCommand.Kind is
             StartupCommandKind.Hide or StartupCommandKind.Toggle;
         await _controller.StartAsync(

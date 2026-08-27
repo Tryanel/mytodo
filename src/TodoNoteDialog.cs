@@ -29,12 +29,16 @@ internal sealed class TodoNoteDialog : Window
     private readonly Button _decisionSave;
     private readonly Button _decisionDiscard;
     private readonly Button _decisionCancel;
+    private readonly Button _decisionClose;
     private readonly Button _clear;
     private readonly Button _cancel;
     private readonly Button _save;
     private readonly Dictionary<Button, bool> _buttons = new();
     private bool _allowClose;
     private bool _applyingTarget;
+    private bool _invalidated;
+    private bool _stageDestructiveDecision;
+    private Action<TodoNoteDraftResolution>? _destructiveDecisionCallback;
     private int _preservedSelectionStart;
     private int _preservedSelectionLength;
 
@@ -160,12 +164,17 @@ internal sealed class TodoNoteDialog : Window
         _decisionDiscard.Margin = new Thickness(8, 0, 0, 0);
         _decisionCancel = CreateButton("", subtle: true);
         _decisionCancel.Margin = new Thickness(8, 0, 0, 0);
+        _decisionClose = CreateButton(Strings.Get("CommonClose"));
+        _decisionClose.Margin = new Thickness(8, 0, 0, 0);
+        _decisionClose.Visibility = Visibility.Collapsed;
         _decisionSave.Click += (_, _) => ResolvePending(TodoNoteDraftResolution.Save);
         _decisionDiscard.Click += (_, _) => ResolvePending(TodoNoteDraftResolution.Discard);
         _decisionCancel.Click += (_, _) => ResolvePending(TodoNoteDraftResolution.Cancel);
+        _decisionClose.Click += (_, _) => ForceClose();
         decisionActions.Children.Add(_decisionSave);
         decisionActions.Children.Add(_decisionDiscard);
         decisionActions.Children.Add(_decisionCancel);
+        decisionActions.Children.Add(_decisionClose);
         var decisionLayout = new StackPanel();
         decisionLayout.Children.Add(_decisionMessage);
         decisionLayout.Children.Add(decisionActions);
@@ -253,6 +262,11 @@ internal sealed class TodoNoteDialog : Window
 
     public void RequestTarget(TodoNoteEditorTarget target)
     {
+        if (_invalidated || _destructiveDecisionCallback != null)
+        {
+            ShowAndActivate();
+            return;
+        }
         _session.SetDraft(_editor.Text);
         var transition = _session.RequestSwitch(target);
         ApplyTransition(transition);
@@ -300,6 +314,129 @@ internal sealed class TodoNoteDialog : Window
         }
     }
 
+    public void RequestDestructiveAction(
+        TodoNoteDraftIntent intent,
+        bool stageDecision,
+        Action<TodoNoteDraftResolution> resolved)
+    {
+        ArgumentNullException.ThrowIfNull(resolved);
+        if (_invalidated)
+        {
+            resolved(TodoNoteDraftResolution.Cancel);
+            return;
+        }
+        if (_destructiveDecisionCallback != null)
+        {
+            ShowAndActivate();
+            resolved(TodoNoteDraftResolution.Cancel);
+            return;
+        }
+
+        _session.SetDraft(_editor.Text);
+        var transition = _session.RequestDestructive(intent);
+        if (transition == TodoNoteSessionTransition.DestructiveActionApproved)
+        {
+            ForceClose();
+            resolved(TodoNoteDraftResolution.Discard);
+            return;
+        }
+
+        _stageDestructiveDecision = stageDecision;
+        _destructiveDecisionCallback = resolved;
+        ApplyTransition(transition);
+        ShowAndActivate();
+    }
+
+    public bool CommitStagedDestructiveDecision(
+        TodoNoteDraftResolution resolution)
+    {
+        if (_destructiveDecisionCallback == null || !_stageDestructiveDecision)
+        {
+            return false;
+        }
+
+        _session.ResolvePending(resolution);
+        _destructiveDecisionCallback = null;
+        _stageDestructiveDecision = false;
+        ForceClose();
+        return true;
+    }
+
+    public bool PrepareStagedDestructiveDecision(
+        TodoNoteDraftResolution resolution)
+    {
+        return _destructiveDecisionCallback != null &&
+            _stageDestructiveDecision &&
+            _session.PendingIntent == TodoNoteDraftIntent.Exit &&
+            resolution != TodoNoteDraftResolution.Cancel;
+    }
+
+    public bool TryGetStagedSave(out string itemId, out string draft)
+    {
+        itemId = "";
+        draft = "";
+        if (_destructiveDecisionCallback == null ||
+            !_stageDestructiveDecision ||
+            _session.PendingIntent != TodoNoteDraftIntent.Exit)
+        {
+            return false;
+        }
+
+        itemId = _session.Target.ItemId;
+        draft = _session.Draft;
+        return true;
+    }
+
+    public void CancelStagedDestructiveDecision()
+    {
+        if (_destructiveDecisionCallback == null || !_stageDestructiveDecision)
+        {
+            return;
+        }
+        _session.ResolvePending(TodoNoteDraftResolution.Cancel);
+        _destructiveDecisionCallback = null;
+        _stageDestructiveDecision = false;
+        HideDecision(restoreEditorFocus: true);
+    }
+
+    public void Invalidate(TodoNoteInvalidationReason reason)
+    {
+        if (_invalidated)
+        {
+            return;
+        }
+
+        var callback = _destructiveDecisionCallback;
+        _destructiveDecisionCallback = null;
+        _stageDestructiveDecision = false;
+        if (_session.PendingIntent != TodoNoteDraftIntent.None)
+        {
+            _session.ResolvePending(TodoNoteDraftResolution.Cancel);
+        }
+
+        _invalidated = true;
+        _editor.IsReadOnly = true;
+        _clear.IsEnabled = false;
+        _cancel.IsEnabled = false;
+        _save.IsEnabled = false;
+        HideError();
+        _decisionMessage.Text = Strings.Get(
+            reason == TodoNoteInvalidationReason.PaperDeleted
+                ? "TodoNotePaperInvalidated"
+                : "TodoNoteTaskInvalidated");
+        _decisionMessage.Visibility = Visibility.Visible;
+        _decisionSave.Visibility = Visibility.Collapsed;
+        _decisionDiscard.Visibility = Visibility.Collapsed;
+        _decisionCancel.Visibility = Visibility.Collapsed;
+        _decisionClose.Visibility = Visibility.Visible;
+        _decisionHost.Visibility = Visibility.Visible;
+        _dirtyStatus.Text = Strings.Get("TodoNoteInvalidatedStatus");
+        _dirtyStatus.Visibility = Visibility.Visible;
+        Title = Strings.Get("TodoNoteInvalidatedWindowTitle");
+        ShowAndActivate();
+        callback?.Invoke(TodoNoteDraftResolution.Cancel);
+    }
+
     private void SaveAndClose()
     {
         _session.SetDraft(_editor.Text);
@@ -329,11 +466,54 @@ internal sealed class TodoNoteDialog : Window
 
     private void ResolvePending(TodoNoteDraftResolution resolution)
     {
+        if (_destructiveDecisionCallback != null)
+        {
+            ResolveDestructiveDecision(resolution);
+            return;
+        }
         if (resolution == TodoNoteDraftResolution.Save && !TrySaveCurrent())
         {
             return;
         }
         ApplyTransition(_session.ResolvePending(resolution));
+    }
+
+    private void ResolveDestructiveDecision(TodoNoteDraftResolution resolution)
+    {
+        var callback = _destructiveDecisionCallback;
+        if (callback == null)
+        {
+            return;
+        }
+
+        if (resolution == TodoNoteDraftResolution.Cancel)
+        {
+            _session.ResolvePending(resolution);
+            _destructiveDecisionCallback = null;
+            _stageDestructiveDecision = false;
+            HideDecision(restoreEditorFocus: true);
+            callback(resolution);
+            return;
+        }
+
+        if (_stageDestructiveDecision)
+        {
+            _decisionMessage.Text = Strings.Get("TodoNoteExitDecisionStaged");
+            _decisionSave.Visibility = Visibility.Collapsed;
+            _decisionDiscard.Visibility = Visibility.Collapsed;
+            _decisionCancel.Visibility = Visibility.Collapsed;
+            callback(resolution);
+            return;
+        }
+
+        if (resolution == TodoNoteDraftResolution.Save && !TrySaveCurrent())
+        {
+            return;
+        }
+        _session.ResolvePending(resolution);
+        _destructiveDecisionCallback = null;
+        ForceClose();
+        callback(resolution);
     }
 
     private void ApplyTransition(TodoNoteSessionTransition transition)
@@ -401,22 +581,50 @@ internal sealed class TodoNoteDialog : Window
         _clear.IsEnabled = false;
         _cancel.IsEnabled = false;
         _save.IsEnabled = false;
-        var switching = _session.PendingIntent == TodoNoteDraftIntent.SwitchTarget;
-        _decisionMessage.Text = switching
-            ? Strings.Format(
-                "TodoNoteSwitchPrompt",
-                DisplayTaskText(_session.Target.TaskText),
-                DisplayTaskText(_session.PendingTarget?.TaskText ?? ""))
-            : Strings.Format(
-                "TodoNoteClosePrompt",
-                DisplayTaskText(_session.Target.TaskText));
-        _decisionDiscard.Content = Strings.Get(
-            switching ? "TodoNoteDiscardAndSwitch" : "TodoNoteDiscardAndClose");
-        _decisionCancel.Content = Strings.Get(
-            switching ? "TodoNoteCancelSwitch" : "TodoNoteContinueEditing");
+        ConfigureDecisionText();
+        _decisionSave.Visibility = Visibility.Visible;
+        _decisionDiscard.Visibility = Visibility.Visible;
+        _decisionCancel.Visibility = Visibility.Visible;
+        _decisionClose.Visibility = Visibility.Collapsed;
         _decisionHost.Visibility = Visibility.Visible;
         HideError();
         _decisionSave.Focus();
+    }
+
+    private void ConfigureDecisionText()
+    {
+        var task = DisplayTaskText(_session.Target.TaskText);
+        switch (_session.PendingIntent)
+        {
+            case TodoNoteDraftIntent.SwitchTarget:
+                _decisionMessage.Text = Strings.Format(
+                    "TodoNoteSwitchPrompt",
+                    task,
+                    DisplayTaskText(_session.PendingTarget?.TaskText ?? ""));
+                _decisionDiscard.Content = Strings.Get("TodoNoteDiscardAndSwitch");
+                _decisionCancel.Content = Strings.Get("TodoNoteCancelSwitch");
+                break;
+            case TodoNoteDraftIntent.DeleteTask:
+                _decisionMessage.Text = Strings.Format("TodoNoteDeleteTaskPrompt", task);
+                _decisionDiscard.Content = Strings.Get("TodoNoteDiscardAndDelete");
+                _decisionCancel.Content = Strings.Get("TodoNoteCancelDelete");
+                break;
+            case TodoNoteDraftIntent.DeletePaper:
+                _decisionMessage.Text = Strings.Get("TodoNoteDeletePaperPrompt");
+                _decisionDiscard.Content = Strings.Get("TodoNoteDiscardAndDelete");
+                _decisionCancel.Content = Strings.Get("TodoNoteCancelDelete");
+                break;
+            case TodoNoteDraftIntent.Exit:
+                _decisionMessage.Text = Strings.Format("TodoNoteExitPrompt", task);
+                _decisionDiscard.Content = Strings.Get("TodoNoteDiscardAndExit");
+                _decisionCancel.Content = Strings.Get("TodoNoteCancelExit");
+                break;
+            default:
+                _decisionMessage.Text = Strings.Format("TodoNoteClosePrompt", task);
+                _decisionDiscard.Content = Strings.Get("TodoNoteDiscardAndClose");
+                _decisionCancel.Content = Strings.Get("TodoNoteContinueEditing");
+                break;
+        }
     }
 
     private void HideDecision(bool restoreEditorFocus)
@@ -468,6 +676,7 @@ internal sealed class TodoNoteDialog : Window
         _decisionSave.Visibility = Visibility.Visible;
         _decisionDiscard.Visibility = Visibility.Visible;
         _decisionCancel.Visibility = Visibility.Visible;
+        _decisionClose.Visibility = Visibility.Collapsed;
         if (_session.PendingIntent == TodoNoteDraftIntent.None)
         {
             _decisionHost.Visibility = Visibility.Collapsed;
@@ -478,6 +687,17 @@ internal sealed class TodoNoteDialog : Window
     {
         if (_allowClose)
         {
+            return;
+        }
+        if (_invalidated)
+        {
+            _allowClose = true;
+            return;
+        }
+        if (_destructiveDecisionCallback != null)
+        {
+            e.Cancel = true;
+            ResolveDestructiveDecision(TodoNoteDraftResolution.Cancel);
             return;
         }
         _session.SetDraft(_editor.Text);
