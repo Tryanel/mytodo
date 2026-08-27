@@ -66,7 +66,7 @@ PaperTodo.exe
 | Todo 任务实体化 | `TodoTaskLifecycle` | 统一判定占位行何时首次成为任务并记录调用方提供的创建时刻；GUI、批量与外部命令复用同一语义 |
 | Todo 撤销历史 | `TodoUndoHistory` | 以 WPF 无关的任务快照统一维护单张待办纸的 Undo/Redo；快照包含任务核心字段和跨纸片关系 |
 | 全局 Todo 投影 | `TodoBoardProjection` + `TodoBoardFilterState` / `TodoBoardSortRules` + Board 类型的 `PaperWindow` body + `AppController` | 纯投影模块从 `State.Papers[].Items` 收集任务并统一执行跨视图搜索、结构化筛选、表格多级排序和月历活动跨度查询；Board body 只编辑查询状态、渲染与导航，仍不保存任务副本 |
-| paper-body session | `PaperBodyHost` | 当前 `IPaperBodySession` 的 attach / invoke / commit / dispose |
+| paper-body session | `PaperBodyHost` | 当前 `IPaperBodySession` 的 attach / invoke / commit / dispose，以及 opt-in 完整 Markdown 导出的 commit / lifecycle 校验 |
 | 插件发现与合同 | `PaperBodyPluginRegistry` | builtin / Native / Web provider 发现、校验、激活 |
 | Edge 单纸片业务状态 | `EdgeCapsuleReducer` + `EdgeCapsuleModel` | 单纸片 typed intent 到完整 model 的原子变化 |
 | Edge 单纸片呈现 | `EdgeCapsulePresenter` | desired model、target plan、transition、applied frame、reconcile |
@@ -164,7 +164,7 @@ Provider 当前分三类：
 - fully trusted / unsandboxed Native .NET/WPF plugin。
 - 本地 Web plugin，通过宿主 WebView2 运行。
 
-`PaperBodyPluginRegistry` 负责 provider 发现和合同校验；`PaperBodyHost` 负责一张纸当前 session 的 attach / invoke / commit / dispose；`PaperWindow` 仍拥有窗口 placement、paper chrome 和 provider 选择。
+`PaperBodyPluginRegistry` 负责 provider 发现和合同校验；`PaperBodyHost` 负责一张纸当前 session 的 attach / invoke / commit / dispose，并在同一个 live session 上协调可选的完整 Markdown 导出；`PaperWindow` 仍拥有窗口 placement、paper chrome 和 provider 选择。
 
 Native assembly 一旦载入 CLR，不按 Web provider 的方式做进程内热替换；需要重启才能稳定切换已加载版本。
 
@@ -203,7 +203,7 @@ Board 自有持久化字段包括普通纸片状态、`BoardView`、`BoardTimeli
 
 看板中的行和日历任务只负责展开、聚焦 owning Todo `PaperWindow` 并定位原任务；实际编辑、撤销、保存和外部事件仍沿用原纸片边界。`AppController.MarkDirty` 调度现有 Board paper 刷新，不把看板变成新的 state authority。创建入口返回现存 Board paper，避免产生多个全局看板。
 
-纸张 Markdown 导出由 `PaperMarkdownExporter` 从 authoritative 状态生成文件。Todo 导出包括勾选状态、备注、创建/完成时间、计划开始日和截止日；Note 导出当前正文；Board 导出按 owning Todo paper 分组的全部任务，不受当前 Board 搜索、筛选、排序、视图或时间窗口影响。导出是显式文件快照，不参与 `StateStore` 的主状态写入，也不成为可回读的第二份 authoritative 数据。
+纸张 Markdown 导出由纸片类型的真实内容 authority 提供。Todo 由 `PaperMarkdownExporter` 导出勾选状态、备注、创建/完成时间、计划开始日和截止日；内置 Note 导出当前 `MarkdownTextBox` 正文；Board 按 owning Todo paper 分组导出全部任务，不受当前查询或视图影响。插件纸只有在协议 1.10 manifest / Native 合同显式声明 `FullMarkdownExport` 时显示入口，宿主先 commit 当前 live session，再通过 `IPaperMarkdownExportProvider`（Web 由 body bridge adapter 实现）取得完整 Markdown；失败、空缺 provider 或 session 被替换时不写文件，也不回退到 capsule summary、`BodyCapsuleText` 或核心正文缓存。导出始终是显式文件快照，不参与 `StateStore` 或插件状态主写入，也不成为可回读的第二份 authoritative 数据。
 
 ## 6. Edge Capsule V3 Lite
 

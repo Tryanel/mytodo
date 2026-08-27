@@ -150,6 +150,11 @@ public sealed partial class PaperWindow
     private bool BodySupports(PaperBodyCapabilities capability) =>
         (CurrentBodyCapabilities & capability) == capability;
 
+    internal bool CanExportPaperAsMarkdown() =>
+        _paper.Type != PaperTypes.Note ||
+        IsCurrentBodyProviderMarkdown ||
+        BodySupports(PaperBodyCapabilities.FullMarkdownExport);
+
     internal bool TryGetPluginDisplayTitle(out string title)
     {
         title = !string.IsNullOrWhiteSpace(_pluginDisplayTitle)

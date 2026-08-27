@@ -12,7 +12,7 @@ public sealed class ExternalTodoPlanningCommandTests
     [Fact]
     public void Planning_contract_uses_api_1_9_while_host_keeps_1_8_compatibility()
     {
-        Assert.Equal("1.9", PaperBodyPluginRegistry.SupportedPluginApiVersion);
+        Assert.Equal("1.10", PaperBodyPluginRegistry.SupportedPluginApiVersion);
         Assert.Equal("1.8", PaperBodyPluginRegistry.MinimumPluginApiVersion);
     }
 

@@ -2,10 +2,10 @@
 
 本文是 **当前 PaperTodo 插件开发手册**。只描述现在可用的插件合同、运行边界、构建方式和示例，不记录协议演进历史。
 
-当前宿主接受协议 1.8～1.9；新插件应声明当前协议：
+当前宿主接受协议 1.8～1.10；新插件应声明当前协议：
 
 ```json
-"apiVersion": "1.9"
+"apiVersion": "1.10"
 ```
 
 插件公开类型以 [`../PaperTodo.Plugin.Abstractions/`](../PaperTodo.Plugin.Abstractions/) 为编译期合同；宿主实际校验和运行行为以当前代码为准。需要理解 PaperTodo 内部 ownership 时再看 [`../ARCHITECTURE.md`](../ARCHITECTURE.md)，插件作者不需要先阅读主程序架构才能开始开发。
@@ -48,7 +48,7 @@ plugins/com.example.hello/
   "id": "com.example.hello",
   "name": "Hello",
   "version": "1.0.0",
-  "apiVersion": "1.9",
+  "apiVersion": "1.10",
   "stateVersion": 1,
   "entry": "web/index.html"
 }
@@ -115,7 +115,7 @@ public sealed class HelloPlugin : IPaperBodyPlugin
     public string Id => "com.example.hello-native";
     public string DisplayName => "Hello Native";
     public Version Version => new(1, 0, 0);
-    public string ApiVersion => "1.9";
+    public string ApiVersion => "1.10";
     public int StateVersion => 1;
     public PaperBodyRuntimeRequirements RuntimeRequirements =>
         PaperBodyRuntimeRequirements.None;
@@ -167,7 +167,7 @@ Native `plugin.json`：
   "id": "com.example.hello-native",
   "name": "Hello Native",
   "version": "1.0.0",
-  "apiVersion": "1.9",
+  "apiVersion": "1.10",
   "stateVersion": 1,
   "entry": "HelloPlugin.dll"
 }
@@ -237,12 +237,12 @@ Native 最终目录只保留运行所需内容。不要分发无必要的 PDB/XM
 | `name` | 显示名称；为空时回退到 ID |
 | `description` | 插件说明 |
 | `version` | 插件版本，必须能解析为 `Version` |
-| `apiVersion` | 当前推荐字符串 `"1.9"`；宿主仍兼容不使用 1.9 新合同成员的 `"1.8"` 插件 |
+| `apiVersion` | 当前推荐字符串 `"1.10"`；宿主仍兼容不使用新合同成员的 `"1.8"` / `"1.9"` 插件 |
 | `stateVersion` | per-paper state 版本，至少为 1 |
 | `entry` | Web 主页面或 Native 入口 DLL，必须位于插件目录内 |
 | `miniEntry` | 可选，仅 Web；专属 Edge Mini 页面 |
 | `miniSize` | 可选，仅与 `miniEntry` 一起使用 |
-| `capabilities` | 可选：`textZoom`、`noteLinks` |
+| `capabilities` | 可选：`textZoom`、`noteLinks`、`fullMarkdownExport` |
 | `requires` | 可选；当前支持 `backgroundUpdates` |
 | `permissions` | 可选；Paper/Todo/Note workspace 权限 |
 | `settings` | 可选；由宿主绘制和保存的全局设置 |
@@ -260,7 +260,7 @@ Native 最终目录只保留运行所需内容。不要分发无必要的 PDB/XM
   "id": "com.example.weather",
   "name": "天气",
   "version": "1.0.0",
-  "apiVersion": "1.9",
+  "apiVersion": "1.10",
   "stateVersion": 1,
   "entry": "web/index.html",
   "miniEntry": "web/mini.html",
@@ -372,6 +372,33 @@ Native `IPaperBodySession` 可以实现：
 `OnVisibilityChanged` 表示这张 paper/plugin 是否仍作为运行对象存在；`OnPresentationChanged` 表示完整正文是否正在展示和交互。计时器、订阅、异步任务和外部资源必须在 `Dispose()` 中停止/释放。
 
 `IPaperBodyPlugin` 应当是无 paper 实例状态的 factory。PaperTodo 为每个正文会话创建新的插件对象；未被任何纸片实际使用的 Native 插件启动时只扫描 manifest，不加载 DLL，也不执行构造函数。
+
+### 完整 Markdown 导出（协议 1.10）
+
+插件只有同时满足以下条件时才会在纸片菜单显示“导出为 Markdown”：
+
+- manifest 显式声明 `"capabilities": ["fullMarkdownExport"]`；
+- Native DLL 的 `Capabilities` 同样包含 `PaperBodyCapabilities.FullMarkdownExport`，或 Web 正文注册了导出 provider；
+- 当前完整正文 session 仍然有效。
+
+Native session 实现：
+
+```csharp
+private sealed class Session : IPaperBodySession, IPaperMarkdownExportProvider
+{
+    public ValueTask<string?> GetFullMarkdownAsync(
+        CancellationToken cancellationToken = default) =>
+        ValueTask.FromResult<string?>(BuildCurrentFullDocument());
+}
+```
+
+Web 正文页注册同步 provider：
+
+```js
+papertodo.registerFullMarkdownExportProvider(() => buildCurrentFullDocument());
+```
+
+宿主会先对同一个 live session 调用 `Commit()` / `flushState()`，再请求完整文档。返回值必须是 string；空 string 表示有效的空文档，`null`、异常、Promise、页面失效或 session 被替换都会让导出失败且不会创建文件。正文必须直接来自当前 session 的完整业务模型，不能返回 capsule `plainText`、摘要、旧 `StateJson` 或宿主的 `BodyCapsuleText` 缓存。导出只是用户触发的文件快照，不要为了导出把正文复制进 `data.json` 或建立第二份 authoritative state。
 
 ## 5. 状态、设置与 `.runtime`
 
@@ -871,6 +898,7 @@ PaperTodo 把 Web 插件视为可信内容；WebView2 保持正常导航、frame
 papertodo.surface;                    // 'body'
 papertodo.saveState(state);
 papertodo.registerStateProvider(fn);
+papertodo.registerFullMarkdownExportProvider(fn); // 仅声明 fullMarkdownExport 的正文页
 papertodo.paper.setTitle(text);
 papertodo.paper.setHeaderText(text);
 papertodo.paper.setCapsulePresentation(value);
@@ -953,7 +981,7 @@ Native 插件是 fully trusted / unsandboxed .NET/WPF 代码，与 PaperTodo 当
 | `PaperTodo.Plugin.SampleClock` | Native 主示例：settings、background updates、标准 capsule、自定义 WPF capsule、dedicated WPF mini |
 | `PaperTodo.Plugin.OfficialClockWeb` | Web 主示例：body/mini 双页面、`miniEntry`、state/settings 同步、startup paper、background updates |
 | `PaperTodo.Plugin.FocusTimer` | Native 有状态交互：正文与 dedicated mini 共享同一计时模型，mini 内直接开始/暂停/继续 |
-| `PaperTodo.Plugin.ReviewArchive` | Workspace 数据读取/observe、插件状态与长期数据的组合使用 |
+| `PaperTodo.Plugin.ReviewArchive` | Workspace 数据读取/observe、插件状态与长期数据组合、协议 1.10 完整 Markdown 导出 |
 | `PaperTodo.Plugin.CloudGenshin` | 正文含 WebView2/native child 时的边界：完整远程应用留在正文，Edge Mini 使用独立 pure-WPF 状态面板 |
 
 开发新插件时优先从与目标最接近的示例复制最小结构，不要把五个示例的能力一次全部合并进去。
@@ -962,7 +990,7 @@ Native 插件是 fully trusted / unsandboxed .NET/WPF 代码，与 PaperTodo 当
 
 ### Manifest
 
-- `apiVersion` 不在宿主支持的 `"1.8"`～`"1.9"` 范围内，或使用计划日期合同却仍声明 `"1.8"`；
+- `apiVersion` 不在宿主支持的 `"1.8"`～`"1.10"` 范围内，或使用计划日期合同却仍声明 `"1.8"`；
 - 插件目录名和 `id` 不一致；
 - `id` 使用非法字符或保留 ID `data`；
 - `miniSize` 没有对应 `miniEntry`；
@@ -970,7 +998,8 @@ Native 插件是 fully trusted / unsandboxed .NET/WPF 代码，与 PaperTodo 当
 - Native manifest 与 DLL 的 id/version/API/state/runtime requirements 不一致；
 - `quick: true` 超过三个；
 - `startupPaper.enabledSetting` 没有指向 boolean setting；
-- 声明未知 `requires` / `permissions`。
+- 声明未知 `requires` / `permissions`；
+- Native manifest 与 DLL 的 `capabilities` 不一致。
 
 ### WPF surface
 
@@ -995,6 +1024,12 @@ Native 插件是 fully trusted / unsandboxed .NET/WPF 代码，与 PaperTodo 当
 - state 迁移失败时直接写空对象覆盖旧数据；
 - 单张 paper state 超过 1 MiB。
 
+### Markdown 导出
+
+- 未声明 `fullMarkdownExport` 却期待插件纸显示宿主导出菜单；
+- 声明能力后返回 capsule 摘要、旧缓存或异步 Promise，而不是当前 live session 的完整 Markdown string；
+- 为了导出把插件正文塞进核心 `data.json` 或另建一份 authoritative state。
+
 ### Workspace / 生命周期
 
 - 没有 permission 就调用 Workspace API；
@@ -1006,7 +1041,7 @@ Native 插件是 fully trusted / unsandboxed .NET/WPF 代码，与 PaperTodo 当
 
 ## 13. 提交示例插件前
 
-- `plugin.json` 使用当前 `apiVersion: "1.9"`；
+- `plugin.json` 使用当前 `apiVersion: "1.10"`；
 - Native manifest 与入口 DLL metadata/runtime requirements 一致；
 - Native 使用统一 build/install 脚本跑通；
 - 最终 `plugins/<id>/` 不包含 PDB/XML/重复 shared assemblies；

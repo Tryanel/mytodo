@@ -35,6 +35,13 @@ internal sealed partial class PaperBodyPluginRegistry
             throw new InvalidDataException(
                 "Plugin permissions require apiVersion 1.3 or newer.");
         }
+        if ((ParseCapabilities(manifest.Capabilities) &
+             PaperBodyCapabilities.FullMarkdownExport) != 0 &&
+            !ApiAtLeast(manifest.ApiVersion, 1, 10))
+        {
+            throw new InvalidDataException(
+                "fullMarkdownExport requires apiVersion 1.10 or newer.");
+        }
     }
 
     private static bool ApiAtLeast(string apiVersion, int major, int minor)

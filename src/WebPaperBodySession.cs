@@ -13,7 +13,9 @@ namespace PaperTodo;
 
 // Web plugins are trusted. WebView2 keeps its normal navigation, frame, popup and permission
 // behavior; only PaperTodo's host bridge remains restricted to the plugin's local top-level origin.
-internal sealed partial class WebPaperBodySession : IPaperBodySession
+internal sealed partial class WebPaperBodySession :
+    IPaperBodySession,
+    IPaperMarkdownExportProvider
 {
     private static readonly object EnvironmentGate = new();
     private static readonly Dictionary<string, Task<CoreWebView2Environment>> EnvironmentTasks =
@@ -23,6 +25,7 @@ internal sealed partial class WebPaperBodySession : IPaperBodySession
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
     };
+    private sealed record WebMarkdownExportResult(bool Ok, string? Markdown);
 
     // A dedicated, non-activating runtime surface is used only for Web plugins that explicitly
     // require background updates and have never been presented. The real PaperWindow is never
@@ -305,6 +308,7 @@ internal sealed partial class WebPaperBodySession : IPaperBodySession
               const pending = new Map();
               let sequence = 0;
               let stateProvider = null;
+              let fullMarkdownExportProvider = null;
               const post = (type, payload = null) => {
                 window.chrome.webview.postMessage({ type, payload });
               };
@@ -312,6 +316,20 @@ internal sealed partial class WebPaperBodySession : IPaperBodySession
               const flushState = () => {
                 if (typeof stateProvider !== 'function') return;
                 try { saveState(stateProvider()); } catch { }
+              };
+              const getFullMarkdownExport = () => {
+                flushState();
+                if (typeof fullMarkdownExportProvider !== 'function') {
+                  return { ok: false, markdown: null };
+                }
+                try {
+                  const markdown = fullMarkdownExportProvider();
+                  return typeof markdown === 'string'
+                    ? { ok: true, markdown }
+                    : { ok: false, markdown: null };
+                } catch {
+                  return { ok: false, markdown: null };
+                }
               };
               const request = (method, params = {}) => {
                 const requestId = `r${++sequence}`;
@@ -355,6 +373,15 @@ internal sealed partial class WebPaperBodySession : IPaperBodySession
                   stateProvider = typeof provider === 'function' ? provider : null;
                   return () => { if (stateProvider === provider) stateProvider = null; };
                 },
+                registerFullMarkdownExportProvider(provider) {
+                  fullMarkdownExportProvider = typeof provider === 'function' ? provider : null;
+                  return () => {
+                    if (fullMarkdownExportProvider === provider) {
+                      fullMarkdownExportProvider = null;
+                    }
+                  };
+                },
+                __getFullMarkdownExport: getFullMarkdownExport,
                 onHostEvent(types, listener, options = {}) {
                   if (typeof listener !== 'function') return () => {};
                   const values = Array.isArray(types)
@@ -1253,6 +1280,40 @@ internal sealed partial class WebPaperBodySession : IPaperBodySession
         // Web state persistence is immediate by contract. This message only asks a registered
         // state provider to flush a final snapshot while the renderer is still alive.
         Send(new { type = "commitRequested" });
+    }
+
+    public async ValueTask<string?> GetFullMarkdownAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (_disposed ||
+            !_pluginDocumentReady ||
+            _webView.CoreWebView2 is not { } core)
+        {
+            throw new InvalidOperationException(
+                "The Web plugin session is not ready for Markdown export.");
+        }
+
+        var documentGeneration = _documentGeneration;
+        var resultJson = await core.ExecuteScriptAsync(
+                "window.papertodo?.__getFullMarkdownExport?.() ?? null")
+            .WaitAsync(cancellationToken);
+        if (_disposed ||
+            documentGeneration != _documentGeneration ||
+            !ReferenceEquals(core, _webView.CoreWebView2))
+        {
+            throw new InvalidOperationException(
+                "The Web plugin session changed during Markdown export.");
+        }
+
+        var result = JsonSerializer.Deserialize<WebMarkdownExportResult>(
+            resultJson,
+            BridgeJsonOptions);
+        if (result?.Ok != true || result.Markdown == null)
+        {
+            throw new InvalidDataException(
+                "The Web plugin returned an invalid Markdown export.");
+        }
+        return result.Markdown;
     }
 
     public void CancelInteractions() => Send(new { type = "cancelInteractions" });

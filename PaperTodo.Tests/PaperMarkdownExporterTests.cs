@@ -3,6 +3,21 @@ namespace PaperTodo.Tests;
 public sealed class PaperMarkdownExporterTests
 {
     [Fact]
+    public void Plugin_paper_never_falls_back_to_capsule_or_core_content_cache()
+    {
+        var paper = new PaperData
+        {
+            Type = PaperTypes.Note,
+            BodyProviderId = "sample.full-export",
+            Content = "stale core content",
+            BodyCapsuleText = "capsule summary"
+        };
+
+        Assert.Throws<InvalidOperationException>(() =>
+            PaperMarkdownExporter.Build(paper, "Plugin paper"));
+    }
+
+    [Fact]
     public void Todo_export_includes_both_planning_fields_for_every_task()
     {
         var planned = Task("planned", "Planned task", 0);

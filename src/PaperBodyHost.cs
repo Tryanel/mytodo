@@ -1,3 +1,4 @@
+using System.IO;
 using PaperTodo.Plugin;
 
 namespace PaperTodo;
@@ -40,6 +41,27 @@ internal sealed class PaperBodyHost
         {
             return ex.GetBaseException();
         }
+    }
+
+    public async ValueTask<string> GetFullMarkdownAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var session = Current;
+        if (session is not IPaperMarkdownExportProvider provider)
+        {
+            throw new InvalidOperationException(
+                "The current paper-body session does not provide Markdown export.");
+        }
+
+        session.Commit();
+        var markdown = await provider.GetFullMarkdownAsync(cancellationToken);
+        if (!ReferenceEquals(Current, session))
+        {
+            throw new InvalidOperationException(
+                "The paper-body session changed during Markdown export.");
+        }
+        return markdown ?? throw new InvalidDataException(
+            "The paper-body session returned an invalid Markdown export.");
     }
 
     public void CommitCancelDispose(bool cancelInteractions)
