@@ -2043,8 +2043,24 @@ public sealed partial class AppController : IDisposable
         MarkDirty();
     }
 
-    public void DeletePaper(PaperData paper)
+    public void DeletePaper(
+        PaperData paper,
+        bool noteDraftResolved = false)
     {
+        if (!noteDraftResolved &&
+            _windows.TryGetValue(paper.Id, out var noteOwner) &&
+            noteOwner.DeferTodoNotePaperDeletion(resolution =>
+            {
+                if (resolution != TodoNoteDraftResolution.Cancel &&
+                    State.Papers.Contains(paper))
+                {
+                    DeletePaper(paper, noteDraftResolved: true);
+                }
+            }))
+        {
+            return;
+        }
+
         paper.IsVisible = false;
         NextVisibilityAnimationVersion(paper.Id);
 
@@ -3648,7 +3664,7 @@ public sealed partial class AppController : IDisposable
 
     public void Exit()
     {
-        if (IsExiting)
+        if (IsExiting || _todoNoteExitDraftBatch != null)
         {
             return;
         }
@@ -3659,24 +3675,48 @@ public sealed partial class AppController : IDisposable
             window.CommitPendingEditsForSave();
         }
 
+        if (BeginTodoNoteExitDraftTransaction())
+        {
+            return;
+        }
+
+        CompleteNormalExit(stateAlreadySaved: false);
+    }
+
+    internal bool HandleSystemSessionEnding()
+    {
+        Exit();
+        // A modeless draft decision or a failed synchronous save cannot finish inside the OS
+        // SessionEnding callback. Cancel this session-ending attempt so Windows cannot cross the
+        // normal-exit safety boundary while the user is still deciding or retrying.
+        return IsRunning;
+    }
+
+    private void CompleteNormalExit(bool stateAlreadySaved)
+    {
+        if (IsExiting)
+        {
+            return;
+        }
+
+        // Normal exit does not cross the shutdown boundary until a synchronous save succeeds.
+        // Crash cleanup intentionally bypasses this method and retains D-003 semantics.
+        if (!stateAlreadySaved && !TrySaveNow(sync: true))
+        {
+            MessageBox.Show(
+                Strings.Get("ExitSaveFailureMessage"),
+                Strings.Get("SaveFailureTitle"),
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            return;
+        }
+
         _lifecycleState = AppLifecycleState.Exiting;
         _saveTimer.Stop();
         _forceSaveTimer.Stop();
         StopFullscreenAvoidanceRuntime(restoreTopmost: false);
         _displayMetricsRefreshTimer.Stop();
         StopTodoReminderTimer();
-
-        if (!TrySaveNow(sync: true))
-        {
-            TryExitCleanup(() =>
-            {
-                MessageBox.Show(
-                    Strings.Get("ExitSaveFailureMessage"),
-                    Strings.Get("SaveFailureTitle"),
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
-            });
-        }
 
         DisposeRuntimeResources();
         _lifecycleState = AppLifecycleState.Disposed;

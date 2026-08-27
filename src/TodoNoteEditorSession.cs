@@ -9,7 +9,10 @@ internal enum TodoNoteDraftIntent
 {
     None,
     SwitchTarget,
-    Close
+    Close,
+    DeleteTask,
+    DeletePaper,
+    Exit
 }
 
 internal enum TodoNoteDraftResolution
@@ -19,12 +22,19 @@ internal enum TodoNoteDraftResolution
     Cancel
 }
 
+internal enum TodoNoteInvalidationReason
+{
+    TaskDeleted,
+    PaperDeleted
+}
+
 internal enum TodoNoteSessionTransition
 {
     None,
     Reactivate,
     TargetChanged,
     DecisionRequired,
+    DestructiveActionApproved,
     Close
 }
 
@@ -90,6 +100,27 @@ internal sealed class TodoNoteEditorSession
         return TodoNoteSessionTransition.DecisionRequired;
     }
 
+    public TodoNoteSessionTransition RequestDestructive(
+        TodoNoteDraftIntent intent)
+    {
+        if (intent is not (TodoNoteDraftIntent.DeleteTask or
+            TodoNoteDraftIntent.DeletePaper or
+            TodoNoteDraftIntent.Exit))
+        {
+            throw new ArgumentOutOfRangeException(nameof(intent));
+        }
+
+        if (!IsDirty)
+        {
+            ClearPending();
+            return TodoNoteSessionTransition.DestructiveActionApproved;
+        }
+
+        PendingIntent = intent;
+        PendingTarget = null;
+        return TodoNoteSessionTransition.DecisionRequired;
+    }
+
     /// <summary>
     /// Resolves the current intent after the caller has successfully persisted the draft when
     /// <paramref name="resolution"/> is Save.
@@ -119,6 +150,17 @@ internal sealed class TodoNoteEditorSession
                 _originalNote = Draft;
             }
             return TodoNoteSessionTransition.Close;
+        }
+
+        if (intent is TodoNoteDraftIntent.DeleteTask or
+            TodoNoteDraftIntent.DeletePaper or
+            TodoNoteDraftIntent.Exit)
+        {
+            if (resolution == TodoNoteDraftResolution.Save)
+            {
+                _originalNote = Draft;
+            }
+            return TodoNoteSessionTransition.DestructiveActionApproved;
         }
 
         if (target == null)

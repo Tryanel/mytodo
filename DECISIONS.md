@@ -38,6 +38,7 @@
 | D-023 | 全局看板成为单例 Board paper | Accepted | 产品边界 / Todo / UI |
 | D-024 | 计划时段与活动跨度分离 | Proposed | 产品边界 / Todo / 时间视图 |
 | D-025 | 任务备注编辑器使用逻辑 ownership，不使用 WPF owned window | Accepted | Todo / 窗口生命周期 |
+| D-026 | 破坏性操作在 mutation / shutdown 前协调任务备注草稿 | Accepted | Todo / 事务 / 退出 |
 
 ## 维护规则
 
@@ -861,3 +862,37 @@ Board 每次从 Todo `PaperData.Items` 生成投影。任务行和日历项只�
 - `src/TodoNoteDialog.cs`：owner-independent 非模态 surface 和编辑器内确认流程。
 - `src/PaperWindow.TodoNotes.cs` / `src/PaperWindow.Lifecycle.cs`：逻辑 ownership、保存与 hide 生命周期。
 - `PaperTodo.Tests/TodoNoteEditorSessionTests.cs` / `PaperTodo.Tests/TodoNoteEditorWpfSmokeTests.cs`。
+
+---
+
+## D-026 — 破坏性操作在 mutation / shutdown 前协调任务备注草稿
+
+**Status:** Accepted
+
+### Context
+
+独立非模态任务备注窗口使草稿可以跨纸片隐藏继续存在，也意味着删除任务、删除 owning paper 和退出应用不能再把窗口关闭当作安全的隐式提交。若 mutation 先发生再询问，取消已经无法恢复对象；若退出先停止 timer、释放托盘或关闭部分窗口，再遇到取消或保存失败，应用会停在半 shutdown 状态。MCP / 插件删除还可能在用户草稿存续时先赢得 authoritative commit。
+
+### Decision
+
+GUI 任务/纸片删除先通过 owning `TodoNoteEditorSession` 处理脏草稿，只有保存或放弃后才执行 mutation；保存后的删除快照从最新 authoritative `PaperItem` 建立，因此一次 Undo 恢复完整备注。正常退出由 `TodoNoteExitDraftBatch` 收集所有脏会话并暂存每个选择；任一取消会撤销全部暂存选择。全部决策就绪后，选择保存的草稿通过 `TodoNoteExitSaveTransaction` 临时投影到 authoritative items；同步保存失败时回滚整批投影并恢复脏会话，成功后才提交会话、关闭编辑器并进入 `Exiting`。Windows session ending 无法同步完成这类非模态交互时取消当次系统请求。外部 PaperCommand 删除仍以其同步 commit / rollback 为 authority；成功后若原任务或纸片已消失，编辑器脱离 active session 并显示只读失效结果，禁止重定向或新建对象。
+
+### Why
+
+草稿确认属于破坏性操作的 preflight，而不是 mutation 后的 UI cleanup。把 shutdown boundary 放在草稿决策和同步保存之后，才能保证取消时应用仍完整运行；按稳定 ID 验证外部竞态则避免把旧草稿误写到占位任务或后来创建的同位置对象。
+
+### Rejected / Do not reintroduce
+
+- 不在删除 mutation 后才询问如何处理原任务草稿。
+- 不让正常退出在草稿选择完成或同步保存成功前停止运行时、关闭部分窗口或设置 `Exiting`。
+- 不在整批同步持久化成功前把部分退出草稿永久提交到 authoritative state，也不让系统 session ending 绕过仍待处理的草稿决策。
+- 不把外部删除后失效的草稿写到占位任务、新任务或相同顺序位置。
+- crash boundary 不调用普通退出 preflight 或普通最终强存。
+
+### Evidence
+
+- `src/TodoNoteEditorSession.cs` / `src/TodoNoteDialog.cs`：破坏性意图、暂存选择与失效 surface。
+- `src/PaperWindow.TodoNotes.cs` / `src/PaperWindow.Todo.cs` / `src/PaperWindow.TodoLinksAndSelection.cs`：任务与纸片删除 preflight、稳定 ID 保存和 Undo 顺序。
+- `src/TodoNoteExitSaveTransaction.cs` / `src/AppController.TodoNoteDraftTransactions.cs` / `src/AppController.cs`：可回滚的集中退出批次与 shutdown boundary。
+- `src/AppController.Mcp.cs` / `src/PaperCommandService.cs`：外部 commit 后的失效协调。
+- `PaperTodo.Tests/TodoNoteExitDraftBatchTests.cs` / `PaperTodo.Tests/TodoNoteDestructiveTransactionWpfSmokeTests.cs`。

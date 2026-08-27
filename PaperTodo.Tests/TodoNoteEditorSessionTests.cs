@@ -116,6 +116,60 @@ public sealed class TodoNoteEditorSessionTests
         Assert.Equal("a", session.Target.ItemId);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void Dirty_destructive_action_requires_a_decision(int intentValue)
+    {
+        var intent = intentValue switch
+        {
+            0 => TodoNoteDraftIntent.DeleteTask,
+            1 => TodoNoteDraftIntent.DeletePaper,
+            _ => TodoNoteDraftIntent.Exit
+        };
+        var session = Session("a", "Alpha", "first");
+        session.SetDraft("unfinished");
+
+        var transition = session.RequestDestructive(intent);
+
+        Assert.Equal(TodoNoteSessionTransition.DecisionRequired, transition);
+        Assert.Equal(intent, session.PendingIntent);
+        Assert.Equal("unfinished", session.Draft);
+    }
+
+    [Fact]
+    public void Cancelling_a_destructive_action_preserves_the_dirty_session()
+    {
+        var session = Session("a", "Alpha", "first");
+        session.SetDraft("unfinished");
+        session.RequestDestructive(TodoNoteDraftIntent.DeleteTask);
+
+        var transition = session.ResolvePending(TodoNoteDraftResolution.Cancel);
+
+        Assert.Equal(TodoNoteSessionTransition.None, transition);
+        Assert.Equal(TodoNoteDraftIntent.None, session.PendingIntent);
+        Assert.Equal("unfinished", session.Draft);
+        Assert.True(session.IsDirty);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void Save_or_discard_approves_a_destructive_action(int resolutionValue)
+    {
+        var resolution = resolutionValue == 0
+            ? TodoNoteDraftResolution.Save
+            : TodoNoteDraftResolution.Discard;
+        var session = Session("a", "Alpha", "first");
+        session.SetDraft("unfinished");
+        session.RequestDestructive(TodoNoteDraftIntent.DeletePaper);
+
+        Assert.Equal(
+            TodoNoteSessionTransition.DestructiveActionApproved,
+            session.ResolvePending(resolution));
+    }
+
     private static TodoNoteEditorSession Session(
         string itemId,
         string taskText,
