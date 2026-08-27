@@ -56,9 +56,22 @@ public static class TodoBoardViews
 {
     public const string Table = "table";
     public const string Calendar = "calendar";
+    public const string Timeline = "timeline";
 
-    public static string Normalize(string? view) =>
-        view == Calendar ? Calendar : Table;
+    public static string Normalize(string? view) => view switch
+    {
+        Calendar or Timeline => view,
+        _ => Table
+    };
+}
+
+public static class TodoBoardTimelineScales
+{
+    public const string Week = "week";
+    public const string Month = "month";
+
+    public static string Normalize(string? scale) =>
+        scale == Month ? Month : Week;
 }
 
 public static class TodoBoardSorts
@@ -610,6 +623,7 @@ public sealed class PaperData
     public string Type { get; set; } = PaperTypes.Todo;
     public string Title { get; set; } = "";
     public string BoardView { get; set; } = TodoBoardViews.Table;
+    public string BoardTimelineScale { get; set; } = TodoBoardTimelineScales.Week;
     // Kept for 4.0.x data compatibility. StateStore migrates it once when BoardSortRules is absent;
     // current Board interactions only write the rule list.
     public string BoardSort { get; set; } = TodoBoardSorts.Default;

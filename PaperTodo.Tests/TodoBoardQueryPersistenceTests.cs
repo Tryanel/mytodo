@@ -109,4 +109,49 @@ public sealed class TodoBoardQueryPersistenceTests
             [new TodoBoardSortRule(TodoBoardSortFields.Completed, true)],
             board.BoardSortRules);
     }
+
+    [Fact]
+    public void Planning_timeline_view_and_scale_round_trip()
+    {
+        var store = new StateStore();
+        var state = new AppState
+        {
+            Papers =
+            [
+                new PaperData
+                {
+                    Type = PaperTypes.Board,
+                    BoardView = TodoBoardViews.Timeline,
+                    BoardTimelineScale = TodoBoardTimelineScales.Month
+                }
+            ]
+        };
+
+        var restored = Assert.Single(
+            store.DeserializeState(store.SerializeState(state)).Papers);
+
+        Assert.Equal(TodoBoardViews.Timeline, restored.BoardView);
+        Assert.Equal(TodoBoardTimelineScales.Month, restored.BoardTimelineScale);
+    }
+
+    [Fact]
+    public void Unknown_timeline_scale_normalizes_while_legacy_calendar_view_remains_activity_calendar()
+    {
+        const string json = """
+            {
+              "papers": [
+                {
+                  "type": "board",
+                  "boardView": "calendar",
+                  "boardTimelineScale": "unknown"
+                }
+              ]
+            }
+            """;
+
+        var restored = Assert.Single(new StateStore().DeserializeState(json).Papers);
+
+        Assert.Equal(TodoBoardViews.Calendar, restored.BoardView);
+        Assert.Equal(TodoBoardTimelineScales.Week, restored.BoardTimelineScale);
+    }
 }

@@ -17,7 +17,7 @@ public sealed class TodoBoardWpfSmokeCollection
 public sealed class TodoBoardActivityCalendarWpfSmokeTests
 {
     [Fact]
-    public void Activity_calendar_resizes_opens_overflow_and_navigates_to_the_owning_todo()
+    public void Board_temporal_views_resize_open_overflow_and_navigate_to_the_owning_todo()
     {
         Exception? failure = null;
         var thread = new Thread(() =>
@@ -60,6 +60,33 @@ public sealed class TodoBoardActivityCalendarWpfSmokeTests
             controller.State.UseCapsuleMode = false;
             controller.State.UseDeepCapsuleMode = false;
 
+            var items = Enumerable.Range(0, 7)
+                .Select(index => new PaperItem
+                {
+                    Id = $"task-{index}",
+                    Text = index == 6 ? "" : $"Task {index + 1}",
+                    Note = index == 6 ? "Note-only task" : "",
+                    Order = index,
+                    CreatedAt = new DateTimeOffset(
+                        DateTime.Today.Year,
+                        DateTime.Today.Month,
+                        Math.Max(1, DateTime.Today.Day - 2),
+                        9,
+                        index,
+                        0,
+                        TimeZoneInfo.Local.GetUtcOffset(DateTime.Now))
+                })
+                .ToList();
+            Assert.Equal(
+                TodoPlanningUpdateResult.Updated,
+                items[0].SetPlanningDates(
+                    DateOnly.FromDateTime(DateTime.Today.AddDays(-1)),
+                    DateOnly.FromDateTime(DateTime.Today.AddDays(2))));
+            Assert.Equal(
+                TodoPlanningUpdateResult.Updated,
+                items[1].SetPlanningDates(
+                    DateOnly.FromDateTime(DateTime.Today),
+                    null));
             var todo = new PaperData
             {
                 Id = "wpf-smoke-todo",
@@ -67,23 +94,7 @@ public sealed class TodoBoardActivityCalendarWpfSmokeTests
                 Title = "Smoke tasks",
                 IsVisible = false,
                 IsCollapsed = true,
-                Items = Enumerable.Range(0, 7)
-                    .Select(index => new PaperItem
-                    {
-                        Id = $"task-{index}",
-                        Text = index == 6 ? "" : $"Task {index + 1}",
-                        Note = index == 6 ? "Note-only task" : "",
-                        Order = index,
-                        CreatedAt = new DateTimeOffset(
-                            DateTime.Today.Year,
-                            DateTime.Today.Month,
-                            Math.Max(1, DateTime.Today.Day - 2),
-                            9,
-                            index,
-                            0,
-                            TimeZoneInfo.Local.GetUtcOffset(DateTime.Now))
-                    })
-                    .ToList()
+                Items = items
             };
             var board = new PaperData
             {
@@ -155,6 +166,51 @@ public sealed class TodoBoardActivityCalendarWpfSmokeTests
             Assert.DoesNotContain(
                 CalendarTaskBars(boardWindow),
                 bar => string.IsNullOrWhiteSpace(AutomationProperties.GetName(bar)));
+
+            var timelineButton = Descendants<Button>(boardWindow)
+                .First(button => Descendants<TextBlock>(button)
+                    .Any(text => text.Text == Strings.Get("TodoBoardTimelineView")));
+            timelineButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Drain(boardWindow.Dispatcher);
+            Assert.Equal(TodoBoardViews.Timeline, board.BoardView);
+
+            Assert.Contains(
+                Descendants<Border>(boardWindow),
+                border => AutomationProperties.GetName(border).Contains(
+                    "Task 1",
+                    StringComparison.Ordinal));
+            Assert.Contains(
+                Descendants<Border>(boardWindow),
+                border => AutomationProperties.GetName(border).Contains(
+                    "Task 2",
+                    StringComparison.Ordinal));
+            var unscheduledButtons = Descendants<Button>(boardWindow)
+                .Where(button =>
+                    AutomationProperties.GetName(button).StartsWith(
+                        Strings.Get("TodoBoardTimelineUnscheduledAutomationPrefix"),
+                        StringComparison.Ordinal))
+                .ToList();
+            Assert.Equal(5, unscheduledButtons.Count);
+
+            var monthButton = Descendants<Button>(boardWindow)
+                .First(button => Descendants<TextBlock>(button)
+                    .Any(text => text.Text == Strings.Get("TodoBoardTimelineMonth")));
+            monthButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Drain(boardWindow.Dispatcher);
+            Assert.Equal(TodoBoardTimelineScales.Month, board.BoardTimelineScale);
+
+            todo.IsVisible = false;
+            todo.IsCollapsed = true;
+            unscheduledButtons = Descendants<Button>(boardWindow)
+                .Where(button =>
+                    AutomationProperties.GetName(button).StartsWith(
+                        Strings.Get("TodoBoardTimelineUnscheduledAutomationPrefix"),
+                        StringComparison.Ordinal))
+                .ToList();
+            unscheduledButtons[0].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Drain(boardWindow.Dispatcher);
+            Assert.True(todo.IsVisible);
+            Assert.False(todo.IsCollapsed);
         }
         finally
         {

@@ -191,9 +191,9 @@ transport 权限、Web/Native surface 生命周期和 MCP protocol 不下沉到 
 
 ### 5.5 Todo 全局投影与纸片导出
 
-`PaperTypes.Board` 是全局单例的纸片类型，使用普通 `PaperData` / `PaperWindow` shell，因此沿用显示、移动、尺寸、折叠胶囊、托盘、主题和删除等纸片生命周期。`TodoBoardProjection` 是不依赖 WPF 的只读投影 authority：从 authoritative Todo `PaperData.Items` 收集非占位任务，以多词 AND / 引号短语解析、状态/所属纸片/历史日期/计划重叠/备注筛选生成跨视图 `QueryEntries`，再只为表格应用有优先级的多级排序；活动月历继续从相同查询结果读取创建到完成（未完成到显式当天）的跨度。比较文化、显示文化、时区和当天都由调用方注入，投影条目携带搜索与渲染共用的状态、历史时间和计划日期文本。`TodoBoardActivityCalendarLayout` 负责把查询结果按周切成连续活动条、确定性分配 lane，并为每个日期给出准确的隐藏任务集合；WPF Board body 只按纸片可用高度选择可见 lane 数、渲染条与完整任务浮层并执行导航。
+`PaperTypes.Board` 是全局单例的纸片类型，使用普通 `PaperData` / `PaperWindow` shell，因此沿用显示、移动、尺寸、折叠胶囊、托盘、主题和删除等纸片生命周期。`TodoBoardProjection` 是不依赖 WPF 的只读投影 authority：从 authoritative Todo `PaperData.Items` 收集非占位任务，以多词 AND / 引号短语解析、状态/所属纸片/历史日期/计划重叠/备注筛选生成跨视图 `QueryEntries`，再只为表格应用有优先级的多级排序；活动月历继续从相同查询结果读取创建到完成（未完成到显式当天）的跨度。比较文化、显示文化、时区和当天都由调用方注入，投影条目携带搜索与渲染共用的状态、历史时间和计划日期文本。`TodoBoardActivityCalendarLayout` 负责把查询结果按周切成连续活动条、确定性分配 lane，并为每个日期给出准确的隐藏任务集合；`TodoBoardPlanningTimelineLayout` 则从同一查询结果构造周/月计划窗口、裁剪连续计划条、生成单日标记并单独返回未排期任务。WPF Board body 只选择视图与窗口、渲染只读结果并导航回 owning Todo paper。
 
-Board 自有持久化字段包括普通纸片状态、`BoardView`、`BoardFilters` 与 `BoardSortRules`，不复制任何任务事实；`StateStore` 规范化未知/重复条件，并把旧 `BoardSort` 单排序偏好迁移为规则列表。搜索词只属于当前 WPF 会话，不进入 `data.json`；引用已删除待办纸的筛选值由投影按当前 authoritative paper 集合忽略，仍存在但为空的待办纸不会被误判为已删除。表格列头通过 `TodoBoardSortRules.SetPrimary` 变更第一规则，WPF 不复制比较或筛选算法。
+Board 自有持久化字段包括普通纸片状态、`BoardView`、`BoardTimelineScale`、`BoardFilters` 与 `BoardSortRules`，不复制任何任务事实；`StateStore` 规范化未知/重复条件，并把旧 `BoardSort` 单排序偏好迁移为规则列表。既有 `calendar` 视图值继续表示活动月历；时间线只保存周/月尺度，当前窗口锚点和搜索词都属于 WPF 会话，不进入 `data.json`。引用已删除待办纸的筛选值由投影按当前 authoritative paper 集合忽略，仍存在但为空的待办纸不会被误判为已删除。表格列头通过 `TodoBoardSortRules.SetPrimary` 变更第一规则，WPF 不复制比较或筛选算法。
 
 看板中的行和日历任务只负责展开、聚焦 owning Todo `PaperWindow` 并定位原任务；实际编辑、撤销、保存和外部事件仍沿用原纸片边界。`AppController.MarkDirty` 调度现有 Board paper 刷新，不把看板变成新的 state authority。创建入口返回现存 Board paper，避免产生多个全局看板。
 

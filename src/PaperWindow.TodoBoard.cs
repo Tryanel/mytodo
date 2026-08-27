@@ -68,8 +68,14 @@ public sealed partial class PaperWindow
             Strings.Get("TodoBoardCalendarView"),
             () => SetTodoBoardView(TodoBoardViews.Calendar));
         _todoBoardCalendarButton.Margin = new Thickness(4, 0, 0, 0);
+        _todoBoardTimelineButton = CreateTodoBoardToolbarButton(
+            "↔",
+            Strings.Get("TodoBoardTimelineView"),
+            () => SetTodoBoardView(TodoBoardViews.Timeline));
+        _todoBoardTimelineButton.Margin = new Thickness(4, 0, 0, 0);
         views.Children.Add(_todoBoardTableButton);
         views.Children.Add(_todoBoardCalendarButton);
+        views.Children.Add(_todoBoardTimelineButton);
 
         var summary = new StackPanel
         {
@@ -215,6 +221,8 @@ public sealed partial class PaperWindow
 
         var view = TodoBoardViews.Normalize(_paper.BoardView);
         _paper.BoardView = view;
+        _paper.BoardTimelineScale = TodoBoardTimelineScales.Normalize(
+            _paper.BoardTimelineScale);
         _paper.BoardSort = TodoBoardSorts.Normalize(_paper.BoardSort);
         _paper.BoardFilters = TodoBoardFilters.Normalize(_paper.BoardFilters);
         _paper.BoardSortRules = _paper.BoardSortRules is null
@@ -222,6 +230,7 @@ public sealed partial class PaperWindow
             : TodoBoardSortRules.Normalize(_paper.BoardSortRules);
         UpdateTodoBoardViewButton(_todoBoardTableButton, view == TodoBoardViews.Table);
         UpdateTodoBoardViewButton(_todoBoardCalendarButton, view == TodoBoardViews.Calendar);
+        UpdateTodoBoardViewButton(_todoBoardTimelineButton, view == TodoBoardViews.Timeline);
         if (_todoBoardTableTools != null)
         {
             _todoBoardTableTools.Visibility = Visibility.Visible;
@@ -273,7 +282,9 @@ public sealed partial class PaperWindow
                 ? BuildTodoBoardNoResultsState()
             : view == TodoBoardViews.Calendar
                 ? BuildTodoBoardCalendar(snapshot)
-                : BuildTodoBoardTable(displayedEntries));
+                : view == TodoBoardViews.Timeline
+                    ? BuildTodoBoardPlanningTimeline(snapshot)
+                    : BuildTodoBoardTable(displayedEntries));
     }
 
     private UIElement BuildTodoBoardSearchControl()
@@ -414,13 +425,6 @@ public sealed partial class PaperWindow
 
         if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.F)
         {
-            if (!string.Equals(
-                    _paper.BoardView,
-                    TodoBoardViews.Table,
-                    StringComparison.Ordinal))
-            {
-                SetTodoBoardView(TodoBoardViews.Table);
-            }
             _ = Dispatcher.BeginInvoke(
                 (Action)(() =>
                 {
