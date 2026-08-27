@@ -1,4 +1,6 @@
+using System.ComponentModel;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
@@ -7,40 +9,64 @@ using System.Windows.Media.Effects;
 
 namespace PaperTodo;
 
-internal static class TodoNoteDialog
+/// <summary>
+/// A modeless, owner-independent surface for one todo paper's note editing session. It is not a
+/// WPF owned window because owned windows are hidden together with their paper; PaperWindow still
+/// owns the session lifetime and supplies stable-id persistence.
+/// </summary>
+internal sealed class TodoNoteDialog : Window
 {
-    public static Window Create(
-        Window owner,
-        string currentNote,
-        Action<string> saveNote)
-    {
-        var dialog = new Window
-        {
-            Owner = owner,
-            Title = Strings.Get("TodoNoteTitle"),
-            Width = 440,
-            Height = 340,
-            MinWidth = 360,
-            MinHeight = 260,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            WindowStyle = WindowStyle.None,
-            ResizeMode = ResizeMode.CanResizeWithGrip,
-            AllowsTransparency = true,
-            Background = Brushes.Transparent,
-            ShowInTaskbar = false,
-            Topmost = owner.Topmost,
-            FontFamily = AppTypography.UiFontFamily,
-            FontSize = AppTypography.Scale(12),
-            Language = AppTypography.Language,
-            SnapsToDevicePixels = true,
-            UseLayoutRounding = true
-        };
-        AppTypography.ApplyTextRendering(dialog);
+    private readonly TodoNoteEditorSession _session;
+    private readonly Func<string, string, bool> _saveNote;
+    private readonly Border _root;
+    private readonly TextBlock _heading;
+    private readonly TextBlock _dirtyStatus;
+    private readonly TextBlock _taskIdentity;
+    private readonly TextBox _editor;
+    private readonly Border _decisionHost;
+    private readonly TextBlock _decisionMessage;
+    private readonly TextBlock _errorMessage;
+    private readonly Button _decisionSave;
+    private readonly Button _decisionDiscard;
+    private readonly Button _decisionCancel;
+    private readonly Button _clear;
+    private readonly Button _cancel;
+    private readonly Button _save;
+    private readonly Dictionary<Button, bool> _buttons = new();
+    private bool _allowClose;
+    private bool _applyingTarget;
+    private int _preservedSelectionStart;
+    private int _preservedSelectionLength;
 
-        var root = new Border
+    private TodoNoteDialog(
+        Window placementOwner,
+        TodoNoteEditorTarget target,
+        Func<string, string, bool> saveNote)
+    {
+        _session = new TodoNoteEditorSession(target);
+        _saveNote = saveNote;
+
+        Width = 460;
+        Height = 390;
+        MinWidth = 380;
+        MinHeight = 300;
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        WindowStyle = WindowStyle.None;
+        ResizeMode = ResizeMode.CanResizeWithGrip;
+        AllowsTransparency = true;
+        Background = Brushes.Transparent;
+        ShowInTaskbar = false;
+        Topmost = placementOwner.Topmost;
+        FontFamily = AppTypography.UiFontFamily;
+        FontSize = AppTypography.Scale(12);
+        Language = AppTypography.Language;
+        SnapsToDevicePixels = true;
+        UseLayoutRounding = true;
+        AppTypography.ApplyTextRendering(this);
+        PlaceNear(placementOwner);
+
+        _root = new Border
         {
-            Background = Theme.PaperBrush,
-            BorderBrush = Theme.PaperBorderBrush,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(10),
             Padding = new Thickness(16),
@@ -51,27 +77,37 @@ internal static class TodoNoteDialog
                 Opacity = 0.22
             }
         };
+
         var layout = new Grid();
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        var header = new Grid { Margin = new Thickness(2, 0, 0, 12) };
+        var header = new Grid { Margin = new Thickness(2, 0, 0, 8) };
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var title = new TextBlock
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        _heading = new TextBlock
         {
-            Text = Strings.Get("TodoNoteTitle"),
-            Foreground = Theme.TextBrush,
             FontSize = AppTypography.Scale(16),
             FontWeight = FontWeights.SemiBold,
             VerticalAlignment = VerticalAlignment.Center
         };
+        _dirtyStatus = new TextBlock
+        {
+            Margin = new Thickness(8, 0, 8, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Visibility = Visibility.Collapsed
+        };
         var close = CreateButton("×", subtle: true);
         close.MinWidth = 34;
-        close.Click += (_, _) => dialog.Close();
-        Grid.SetColumn(close, 1);
-        header.Children.Add(title);
+        close.Click += (_, _) => Close();
+        Grid.SetColumn(_dirtyStatus, 1);
+        Grid.SetColumn(close, 2);
+        header.Children.Add(_heading);
+        header.Children.Add(_dirtyStatus);
         header.Children.Add(close);
         header.MouseLeftButtonDown += (_, e) =>
         {
@@ -79,12 +115,17 @@ internal static class TodoNoteDialog
             {
                 return;
             }
-            try { dialog.DragMove(); } catch (InvalidOperationException) { }
+            try { DragMove(); } catch (InvalidOperationException) { }
         };
 
-        var editor = new TextBox
+        _taskIdentity = new TextBlock
         {
-            Text = currentNote ?? "",
+            Margin = new Thickness(2, 0, 2, 10),
+            TextTrimming = TextTrimming.CharacterEllipsis
+        };
+
+        _editor = new TextBox
+        {
             AcceptsReturn = true,
             AcceptsTab = true,
             TextWrapping = TextWrapping.Wrap,
@@ -92,73 +133,394 @@ internal static class TodoNoteDialog
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             MaxLength = PaperWindow.TodoNoteMaxLength,
             Padding = new Thickness(10),
-            BorderBrush = Theme.PaperBorderBrush,
             BorderThickness = new Thickness(1),
-            Background = Theme.Tint(12),
-            Foreground = Theme.TextBrush,
-            CaretBrush = Theme.TextBrush,
             FontFamily = AppTypography.UiFontFamily,
             FontSize = AppTypography.Scale(13)
+        };
+        AutomationProperties.SetName(_editor, Strings.Get("TodoNoteTitle"));
+
+        _decisionMessage = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 10)
+        };
+        _errorMessage = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 8, 0, 0),
+            Visibility = Visibility.Collapsed
+        };
+        var decisionActions = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+        _decisionSave = CreateButton(Strings.Get("CommonSave"));
+        _decisionDiscard = CreateButton("", subtle: true);
+        _decisionDiscard.Margin = new Thickness(8, 0, 0, 0);
+        _decisionCancel = CreateButton("", subtle: true);
+        _decisionCancel.Margin = new Thickness(8, 0, 0, 0);
+        _decisionSave.Click += (_, _) => ResolvePending(TodoNoteDraftResolution.Save);
+        _decisionDiscard.Click += (_, _) => ResolvePending(TodoNoteDraftResolution.Discard);
+        _decisionCancel.Click += (_, _) => ResolvePending(TodoNoteDraftResolution.Cancel);
+        decisionActions.Children.Add(_decisionSave);
+        decisionActions.Children.Add(_decisionDiscard);
+        decisionActions.Children.Add(_decisionCancel);
+        var decisionLayout = new StackPanel();
+        decisionLayout.Children.Add(_decisionMessage);
+        decisionLayout.Children.Add(decisionActions);
+        decisionLayout.Children.Add(_errorMessage);
+        _decisionHost = new Border
+        {
+            Margin = new Thickness(0, 12, 0, 0),
+            Padding = new Thickness(12),
+            CornerRadius = new CornerRadius(8),
+            BorderThickness = new Thickness(1),
+            Child = decisionLayout,
+            Visibility = Visibility.Collapsed
         };
 
         var buttons = new Grid { Margin = new Thickness(0, 14, 0, 0) };
         buttons.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         buttons.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var clear = CreateButton(Strings.Get("TodoNoteClear"), subtle: true);
-        clear.IsEnabled = !string.IsNullOrWhiteSpace(currentNote);
-        clear.Click += (_, _) =>
+        _clear = CreateButton(Strings.Get("TodoNoteClear"), subtle: true);
+        _clear.Click += (_, _) =>
         {
-            saveNote("");
-            dialog.Close();
+            _editor.Text = "";
+            _editor.Focus();
         };
-        var actions = new StackPanel
+        var regularActions = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right
         };
-        var cancel = CreateButton(Strings.Get("CommonCancel"), subtle: true);
-        cancel.Click += (_, _) => dialog.Close();
-        var save = CreateButton(Strings.Get("CommonSave"));
-        save.Margin = new Thickness(8, 0, 0, 0);
-        save.IsDefault = true;
-        save.Click += (_, _) =>
-        {
-            saveNote(editor.Text);
-            dialog.Close();
-        };
-        actions.Children.Add(cancel);
-        actions.Children.Add(save);
-        Grid.SetColumn(actions, 1);
-        buttons.Children.Add(clear);
-        buttons.Children.Add(actions);
+        _cancel = CreateButton(Strings.Get("CommonCancel"), subtle: true);
+        _cancel.Click += (_, _) => Close();
+        _save = CreateButton(Strings.Get("CommonSave"));
+        _save.Margin = new Thickness(8, 0, 0, 0);
+        _save.IsDefault = true;
+        _save.Click += (_, _) => SaveAndClose();
+        regularActions.Children.Add(_cancel);
+        regularActions.Children.Add(_save);
+        Grid.SetColumn(regularActions, 1);
+        buttons.Children.Add(_clear);
+        buttons.Children.Add(regularActions);
 
-        Grid.SetRow(editor, 1);
-        Grid.SetRow(buttons, 2);
+        Grid.SetRow(_taskIdentity, 1);
+        Grid.SetRow(_editor, 2);
+        Grid.SetRow(_decisionHost, 3);
+        Grid.SetRow(buttons, 4);
         layout.Children.Add(header);
-        layout.Children.Add(editor);
+        layout.Children.Add(_taskIdentity);
+        layout.Children.Add(_editor);
+        layout.Children.Add(_decisionHost);
         layout.Children.Add(buttons);
-        root.Child = layout;
-        dialog.Content = root;
-        dialog.ContentRendered += (_, _) =>
+        _root.Child = layout;
+        Content = _root;
+
+        _editor.TextChanged += (_, _) =>
         {
-            editor.Focus();
-            editor.CaretIndex = editor.Text.Length;
-        };
-        dialog.PreviewKeyDown += (_, e) =>
-        {
-            if (e.Key != Key.Escape)
+            if (_applyingTarget)
             {
                 return;
             }
-
-            dialog.Close();
-            e.Handled = true;
+            _session.SetDraft(_editor.Text);
+            RefreshIdentityText();
+            _clear.IsEnabled = _editor.Text.Length > 0;
+            HideError();
         };
-
-        return dialog;
+        ApplyTargetToSurface();
+        RefreshTheme();
+        ContentRendered += (_, _) =>
+        {
+            _editor.Focus();
+            _editor.CaretIndex = _editor.Text.Length;
+        };
+        PreviewKeyDown += OnPreviewKeyDown;
+        Closing += OnDialogClosing;
     }
 
-    private static Button CreateButton(string text, bool subtle = false)
+    public static TodoNoteDialog Create(
+        Window placementOwner,
+        TodoNoteEditorTarget target,
+        Func<string, string, bool> saveNote) =>
+        new(placementOwner, target, saveNote);
+
+    public string ItemId => _session.Target.ItemId;
+    public bool IsDirty => _session.IsDirty;
+    public TodoNoteDraftIntent PendingIntent => _session.PendingIntent;
+    internal TextBox Editor => _editor;
+
+    public void RequestTarget(TodoNoteEditorTarget target)
+    {
+        _session.SetDraft(_editor.Text);
+        var transition = _session.RequestSwitch(target);
+        ApplyTransition(transition);
+        ShowAndActivate();
+    }
+
+    public void ShowAndActivate()
+    {
+        if (!IsVisible)
+        {
+            Show();
+        }
+        Activate();
+    }
+
+    public void ForceClose()
+    {
+        _allowClose = true;
+        Close();
+    }
+
+    public void RefreshTopmost(bool topmost)
+    {
+        Topmost = topmost;
+    }
+
+    public void RefreshTheme()
+    {
+        _root.Background = Theme.PaperBrush;
+        _root.BorderBrush = Theme.PaperBorderBrush;
+        _heading.Foreground = Theme.TextBrush;
+        _dirtyStatus.Foreground = Theme.ActiveBrush;
+        _taskIdentity.Foreground = Theme.WeakTextBrush;
+        _editor.BorderBrush = Theme.PaperBorderBrush;
+        _editor.Background = Theme.Tint(12);
+        _editor.Foreground = Theme.TextBrush;
+        _editor.CaretBrush = Theme.TextBrush;
+        _decisionHost.Background = Theme.Tint(18);
+        _decisionHost.BorderBrush = Theme.PaperBorderBrush;
+        _decisionMessage.Foreground = Theme.TextBrush;
+        _errorMessage.Foreground = Theme.DangerBrush;
+        foreach (var (button, subtle) in _buttons)
+        {
+            button.Style = CreateButtonStyle(subtle);
+        }
+    }
+
+    private void SaveAndClose()
+    {
+        _session.SetDraft(_editor.Text);
+        if (!TrySaveCurrent())
+        {
+            return;
+        }
+        _allowClose = true;
+        Close();
+    }
+
+    private bool TrySaveCurrent()
+    {
+        if (!_session.IsDirty)
+        {
+            return true;
+        }
+        if (!_saveNote(_session.Target.ItemId, _session.Draft))
+        {
+            ShowError();
+            return false;
+        }
+        _session.MarkSaved();
+        RefreshIdentityText();
+        return true;
+    }
+
+    private void ResolvePending(TodoNoteDraftResolution resolution)
+    {
+        if (resolution == TodoNoteDraftResolution.Save && !TrySaveCurrent())
+        {
+            return;
+        }
+        ApplyTransition(_session.ResolvePending(resolution));
+    }
+
+    private void ApplyTransition(TodoNoteSessionTransition transition)
+    {
+        switch (transition)
+        {
+            case TodoNoteSessionTransition.TargetChanged:
+                HideDecision(restoreEditorFocus: false);
+                ApplyTargetToSurface();
+                _editor.Focus();
+                _editor.CaretIndex = _editor.Text.Length;
+                break;
+            case TodoNoteSessionTransition.DecisionRequired:
+                ShowDecision();
+                break;
+            case TodoNoteSessionTransition.Close:
+                _allowClose = true;
+                Close();
+                break;
+            case TodoNoteSessionTransition.Reactivate:
+                HideDecision(restoreEditorFocus: true);
+                break;
+            default:
+                HideDecision(restoreEditorFocus: true);
+                break;
+        }
+    }
+
+    private void ApplyTargetToSurface()
+    {
+        _applyingTarget = true;
+        try
+        {
+            _editor.Text = _session.Draft;
+            _editor.IsReadOnly = false;
+            _clear.IsEnabled = _editor.Text.Length > 0;
+        }
+        finally
+        {
+            _applyingTarget = false;
+        }
+        RefreshIdentityText();
+        HideError();
+    }
+
+    private void RefreshIdentityText()
+    {
+        var task = DisplayTaskText(_session.Target.TaskText);
+        _heading.Text = Strings.Get("TodoNoteTitle");
+        _taskIdentity.Text = Strings.Format("TodoNoteTaskIdentity", task);
+        _dirtyStatus.Text = Strings.Get("TodoNoteDirtyStatus");
+        _dirtyStatus.Visibility = _session.IsDirty
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        Title = Strings.Format(
+            _session.IsDirty ? "TodoNoteDirtyWindowTitle" : "TodoNoteWindowTitle",
+            task);
+    }
+
+    private void ShowDecision()
+    {
+        _preservedSelectionStart = _editor.SelectionStart;
+        _preservedSelectionLength = _editor.SelectionLength;
+        _editor.IsReadOnly = true;
+        _clear.IsEnabled = false;
+        _cancel.IsEnabled = false;
+        _save.IsEnabled = false;
+        var switching = _session.PendingIntent == TodoNoteDraftIntent.SwitchTarget;
+        _decisionMessage.Text = switching
+            ? Strings.Format(
+                "TodoNoteSwitchPrompt",
+                DisplayTaskText(_session.Target.TaskText),
+                DisplayTaskText(_session.PendingTarget?.TaskText ?? ""))
+            : Strings.Format(
+                "TodoNoteClosePrompt",
+                DisplayTaskText(_session.Target.TaskText));
+        _decisionDiscard.Content = Strings.Get(
+            switching ? "TodoNoteDiscardAndSwitch" : "TodoNoteDiscardAndClose");
+        _decisionCancel.Content = Strings.Get(
+            switching ? "TodoNoteCancelSwitch" : "TodoNoteContinueEditing");
+        _decisionHost.Visibility = Visibility.Visible;
+        HideError();
+        _decisionSave.Focus();
+    }
+
+    private void HideDecision(bool restoreEditorFocus)
+    {
+        _decisionHost.Visibility = Visibility.Collapsed;
+        _editor.IsReadOnly = false;
+        _clear.IsEnabled = _editor.Text.Length > 0;
+        _cancel.IsEnabled = true;
+        _save.IsEnabled = true;
+        HideError();
+        if (!restoreEditorFocus)
+        {
+            return;
+        }
+        _editor.Focus();
+        var start = Math.Min(_preservedSelectionStart, _editor.Text.Length);
+        _editor.Select(
+            start,
+            Math.Min(
+                _preservedSelectionLength,
+                Math.Max(0, _editor.Text.Length - start)));
+    }
+
+    private void ShowError()
+    {
+        var hasPendingDecision = _session.PendingIntent != TodoNoteDraftIntent.None;
+        _decisionMessage.Visibility = hasPendingDecision
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        _decisionSave.Visibility = hasPendingDecision
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        _decisionDiscard.Visibility = hasPendingDecision
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        _decisionCancel.Visibility = hasPendingDecision
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        _errorMessage.Text = Strings.Get("TodoNoteSaveFailed");
+        _errorMessage.Visibility = Visibility.Visible;
+        _decisionHost.Visibility = Visibility.Visible;
+    }
+
+    private void HideError()
+    {
+        _errorMessage.Visibility = Visibility.Collapsed;
+        _errorMessage.Text = "";
+        _decisionMessage.Visibility = Visibility.Visible;
+        _decisionSave.Visibility = Visibility.Visible;
+        _decisionDiscard.Visibility = Visibility.Visible;
+        _decisionCancel.Visibility = Visibility.Visible;
+        if (_session.PendingIntent == TodoNoteDraftIntent.None)
+        {
+            _decisionHost.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void OnDialogClosing(object? sender, CancelEventArgs e)
+    {
+        if (_allowClose)
+        {
+            return;
+        }
+        _session.SetDraft(_editor.Text);
+        var transition = _session.RequestClose();
+        if (transition == TodoNoteSessionTransition.Close)
+        {
+            _allowClose = true;
+            e.Cancel = false;
+            return;
+        }
+        e.Cancel = true;
+        ApplyTransition(transition);
+    }
+
+    private void OnPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape)
+        {
+            return;
+        }
+        if (_session.PendingIntent != TodoNoteDraftIntent.None)
+        {
+            ResolvePending(TodoNoteDraftResolution.Cancel);
+        }
+        else
+        {
+            Close();
+        }
+        e.Handled = true;
+    }
+
+    private Button CreateButton(string text, bool subtle = false)
+    {
+        var button = new Button
+        {
+            Content = text,
+            Style = CreateButtonStyle(subtle)
+        };
+        _buttons[button] = subtle;
+        return button;
+    }
+
+    private static Style CreateButtonStyle(bool subtle)
     {
         var style = new Style(typeof(Button));
         style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(14, 7, 14, 7)));
@@ -181,6 +543,62 @@ internal static class TodoNoteDialog
         hover.Setters.Add(new Setter(Control.BackgroundProperty, Theme.Tint(50)));
         template.Triggers.Add(hover);
         style.Setters.Add(new Setter(Control.TemplateProperty, template));
-        return new Button { Content = text, Style = style };
+        return style;
+    }
+
+    private void PlaceNear(Window placementOwner)
+    {
+        var ownerWidth = placementOwner.ActualWidth > 0
+            ? placementOwner.ActualWidth
+            : placementOwner.Width;
+        var ownerHeight = placementOwner.ActualHeight > 0
+            ? placementOwner.ActualHeight
+            : placementOwner.Height;
+        var placement = TodoNoteDialogPlacement.Calculate(
+            new Rect(
+                placementOwner.Left,
+                placementOwner.Top,
+                ownerWidth,
+                ownerHeight),
+            new Size(Width, Height),
+            WindowWorkAreaHelper.WorkAreaFor(placementOwner));
+        Left = placement.X;
+        Top = placement.Y;
+    }
+
+    private static string DisplayTaskText(string text)
+    {
+        var compact = string.Join(
+            " ",
+            (text ?? "")
+                .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+                .Select(line => line.Trim())
+                .Where(line => line.Length > 0));
+        if (compact.Length == 0)
+        {
+            return Strings.Get("TodoNoteUntitledTask");
+        }
+        return compact.Length <= 80 ? compact : compact[..79] + "…";
+    }
+}
+
+internal static class TodoNoteDialogPlacement
+{
+    public static Point Calculate(
+        Rect ownerBounds,
+        Size dialogSize,
+        Rect workArea)
+    {
+        var left = ownerBounds.Left + Math.Max(0, (ownerBounds.Width - dialogSize.Width) / 2);
+        var top = ownerBounds.Top + Math.Max(0, (ownerBounds.Height - dialogSize.Height) / 2);
+        return new Point(
+            Math.Clamp(
+                left,
+                workArea.Left,
+                Math.Max(workArea.Left, workArea.Right - dialogSize.Width)),
+            Math.Clamp(
+                top,
+                workArea.Top,
+                Math.Max(workArea.Top, workArea.Bottom - dialogSize.Height)));
     }
 }

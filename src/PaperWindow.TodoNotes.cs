@@ -7,28 +7,21 @@ namespace PaperTodo;
 
 public sealed partial class PaperWindow
 {
-    private Window? _todoNoteEditor;
-    private string? _todoNoteEditorItemId;
+    private TodoNoteDialog? _todoNoteEditor;
 
     private void EditTodoNote(PaperItem item)
     {
         if (_todoNoteEditor != null)
         {
-            if (!_todoNoteEditor.IsVisible && _todoNoteEditor.IsLoaded)
-            {
-                _todoNoteEditor.Show();
-            }
-            _todoNoteEditor.Activate();
+            _todoNoteEditor.RequestTarget(TodoNoteTarget(item));
             return;
         }
 
-        var itemId = item.Id;
         var editor = TodoNoteDialog.Create(
             this,
-            item.Note,
-            note => SaveTodoNote(itemId, note));
+            TodoNoteTarget(item),
+            SaveTodoNote);
         _todoNoteEditor = editor;
-        _todoNoteEditorItemId = itemId;
         editor.Closed += (_, _) =>
         {
             if (!ReferenceEquals(_todoNoteEditor, editor))
@@ -37,7 +30,6 @@ public sealed partial class PaperWindow
             }
 
             _todoNoteEditor = null;
-            _todoNoteEditorItemId = null;
             RefreshExperimentalFocusPresentation();
         };
 
@@ -46,17 +38,20 @@ public sealed partial class PaperWindow
         CancelExperimentalAutoCollapse();
         CancelStrictAutoCollapse();
         RefreshExperimentalFocusPresentation(animate: false);
-        editor.Show();
-        editor.Activate();
+        editor.ShowAndActivate();
     }
 
-    private void SaveTodoNote(string itemId, string note)
+    private bool SaveTodoNote(string itemId, string note)
     {
         var item = _paper.Items.FirstOrDefault(candidate =>
             string.Equals(candidate.Id, itemId, StringComparison.Ordinal));
-        if (item == null || string.Equals(item.Note, note, StringComparison.Ordinal))
+        if (item == null)
         {
-            return;
+            return false;
+        }
+        if (string.Equals(item.Note, note, StringComparison.Ordinal))
+        {
+            return true;
         }
 
         PushUndoSnapshot();
@@ -67,7 +62,8 @@ public sealed partial class PaperWindow
         _controller.MarkDirty();
         ReconcileTodoRows(
             new[] { item.Id },
-            focusItemId: !_paper.IsCollapsed && IsVisible ? item.Id : null);
+            focusItemId: null);
+        return true;
     }
 
     private bool HasOpenTodoNoteEditor() => _todoNoteEditor != null;
@@ -75,19 +71,28 @@ public sealed partial class PaperWindow
     private bool HasTodoNoteEditorForDifferentItem(string itemId) =>
         _todoNoteEditor != null &&
         !string.Equals(
-            _todoNoteEditorItemId,
+            _todoNoteEditor.ItemId,
             itemId,
             StringComparison.Ordinal);
 
-    internal string? TodoNoteEditorItemId => _todoNoteEditorItemId;
+    internal string? TodoNoteEditorItemId => _todoNoteEditor?.ItemId;
+    internal TodoNoteDialog? TodoNoteEditorWindow => _todoNoteEditor;
 
     private void CloseTodoNoteEditor()
     {
         var editor = _todoNoteEditor;
         _todoNoteEditor = null;
-        _todoNoteEditorItemId = null;
-        editor?.Close();
+        editor?.ForceClose();
     }
+
+    private void RefreshTodoNoteEditorTheme() =>
+        _todoNoteEditor?.RefreshTheme();
+
+    private void RefreshTodoNoteEditorTopmost(bool topmost) =>
+        _todoNoteEditor?.RefreshTopmost(topmost);
+
+    private static TodoNoteEditorTarget TodoNoteTarget(PaperItem item) =>
+        new(item.Id, item.Text, item.Note);
 
     private Border BuildTodoNoteIndicator(
         PaperItem item,
