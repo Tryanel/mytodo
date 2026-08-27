@@ -36,7 +36,7 @@
 | D-021 | 插件与 MCP 共用 `PaperCommandService` | Accepted | 外部命令 / 一致性 |
 | D-022 | 纸片持有任务，全局看板只做聚合投影 | Superseded by D-023 | 产品边界 / Todo |
 | D-023 | 全局看板成为单例 Board paper | Accepted | 产品边界 / Todo / UI |
-| D-024 | 计划时段与活动跨度分离 | Proposed | 产品边界 / Todo / 时间视图 |
+| D-024 | 计划时段与活动跨度分离 | Accepted | 产品边界 / Todo / 时间视图 |
 | D-025 | 任务备注编辑器使用逻辑 ownership，不使用 WPF owned window | Accepted | Todo / 窗口生命周期 |
 | D-026 | 破坏性操作在 mutation / shutdown 前协调任务备注草稿 | Accepted | Todo / 事务 / 退出 |
 | D-027 | 插件 Markdown 导出由 opt-in live session 提供 | Accepted | 插件 / 导出 / 协议 |
@@ -795,7 +795,7 @@ Board 每次从 Todo `PaperData.Items` 生成投影。任务行和日历项只�
 
 ## D-024 — 计划时段与活动跨度分离
 
-**Status:** Proposed
+**Status:** Accepted
 
 ### Context
 
@@ -822,7 +822,7 @@ Board 每次从 Todo `PaperData.Items` 生成投影。任务行和日历项只�
 
 - 计划日期属于核心任务数据协议，必须兼容没有这些字段的旧数据，并进入撤销、外部命令快照和 Markdown 导出。
 - 活动月历和计划时间线必须使用不同的数据来源与用户可见名称。
-- 实现、迁移和验收完成前，本条保持 Proposed；完成后再更新当前 Architecture、Evidence 和状态。
+- 搜索与筛选共享同一投影结果；多级排序只改变表格顺序，活动月历与计划时间线各自保持确定性的时间布局。
 
 ### Evidence
 
@@ -832,6 +832,8 @@ Board 每次从 Todo `PaperData.Items` 生成投影。任务行和日历项只�
 - `src/TodoBoardProjection.cs` / `src/TodoBoardPlanningTimelineLayout.cs` / `src/PaperWindow.TodoBoardPlanningTimeline.cs`：共享查询和只读计划时间线。
 - `src/PaperCommandService.cs` / `src/McpCommandService.cs` / `src/PaperBodyPluginHostApi.cs`：外部快照、计划日期 mutation、保存失败回滚与事件边界。
 - `src/PaperMarkdownExporter.cs`：Todo 与 Board 的计划日期全量导出。
+- `PaperTodo.Tests/TodoPlanningTests.cs` / `TodoBoardProjectionTests.cs` / `TodoBoardActivityCalendarLayoutTests.cs` / `TodoBoardPlanningTimelineLayoutTests.cs`：计划字段、共享查询、活动跨度与计划时间线的可执行领域证据。
+- `PaperTodo.Tests/ExternalTodoPlanningCommandTests.cs` / `PaperMarkdownExporterTests.cs`：外部事务回滚和全量导出证据。
 
 ---
 

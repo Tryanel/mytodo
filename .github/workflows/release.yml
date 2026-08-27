@@ -76,7 +76,37 @@ jobs:
           "framework_dependent_exe=PaperTodo-v$version-win-x64-no-runtime.exe" >> $env:GITHUB_OUTPUT
 
       - name: Restore
-        run: dotnet restore .\PaperTodo.csproj
+        run: dotnet restore .\PaperTodo.slnx
+
+      - name: Build and test release candidate
+        run: |
+          dotnet build .\PaperTodo.csproj -c Release --no-restore
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+          dotnet test .\PaperTodo.slnx -c Release --no-restore
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+      - name: Rebuild and verify native plugin samples
+        run: |
+          $projects = Get-ChildItem -Path .\plugin-samples -Recurse -Filter *.csproj |
+            Sort-Object FullName
+          if (-not $projects) {
+            throw "No native plugin sample projects were found."
+          }
+          foreach ($project in $projects) {
+            & .\plugin-samples\Build-And-Install-NativePlugin.ps1 `
+              -ProjectPath $project.FullName
+            if ($LASTEXITCODE -ne 0) {
+              exit $LASTEXITCODE
+            }
+          }
+          git diff --exit-code -- plugins
+          if ($LASTEXITCODE -ne 0) {
+            throw "Committed native plugin outputs do not match their source projects."
+          }
 
       - name: Publish release executables
         env:
@@ -101,9 +131,7 @@ jobs:
             /p:EnableCompressionInSingleFile=true `
             /p:PublishTrimmed=false `
             /p:EmbedAllSources=false `
-            /p:EmbedUntrackedSources=false `
-            /p:DebugType=none `
-            /p:DebugSymbols=false
+            /p:EmbedUntrackedSources=false
 
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
@@ -122,9 +150,7 @@ jobs:
             /p:EnableCompressionInSingleFile=false `
             /p:PublishTrimmed=false `
             /p:EmbedAllSources=false `
-            /p:EmbedUntrackedSources=false `
-            /p:DebugType=none `
-            /p:DebugSymbols=false
+            /p:EmbedUntrackedSources=false
 
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
@@ -190,6 +216,11 @@ jobs:
             throw "Release tag must start with 'v'. Got '$tag'."
           }
 
+          $expectedTag = "v${{ steps.meta.outputs.version }}"
+          if ($tag -ne $expectedTag) {
+            throw "Release tag '$tag' does not match PaperTodo.csproj version '$expectedTag'. Commit the intended project version before publishing."
+          }
+
           $isStable = $tag -notmatch '(?i)(alpha|beta|preview|rc)'
           $stableConfirmed = "${{ inputs.stable_release_confirmed }}" -eq "true"
           if ($isStable -and "${{ github.event_name }}" -ne "workflow_dispatch") {
@@ -243,6 +274,17 @@ jobs:
           $notesLines = @(
             $changelogNotes,
             "",
+            "构建与验证:",
+            "",
+            "- 源码提交: [$env:GITHUB_SHA](${{ github.server_url }}/${{ github.repository }}/commit/$env:GITHUB_SHA)",
+            "- 自动化记录: [GitHub Actions run $env:GITHUB_RUN_ID](${{ github.server_url }}/${{ github.repository }}/actions/runs/$env:GITHUB_RUN_ID)",
+            "- 本次发布工作流已从仓库内源码强制重建 LMDB，并通过 Release 构建、全部自动化测试和原生插件示例重建校验。",
+            "",
+            "已知限制:",
+            "",
+            "- 这是 Preview 候选；Windows 10/11、多屏混合 DPI 和两种发布包的真实硬件 RC 矩阵，以及至少七天真实使用门槛，仍由 #16 跟踪，尚未声明通过。",
+            "- no-runtime 版本需要预先安装 .NET 10 Desktop Runtime x64；Release 不捆绑可选插件。",
+            "",
             "下载:",
             "",
             "- 完整版（含 .NET 运行库）：${selfContained}",
@@ -279,8 +321,28 @@ jobs:
             "$frameworkDependent.crt"
           )
 
+          $tagExists = $false
+          git show-ref --verify --quiet "refs/tags/$tag"
+          if ($LASTEXITCODE -eq 0) {
+            $tagExists = $true
+            $tagCommit = git rev-list -n 1 $tag
+            if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($tagCommit)) {
+              throw "Could not resolve existing release tag '$tag' to a commit."
+            }
+            $tagCommit = $tagCommit.Trim()
+            if ($tagCommit -ne $env:GITHUB_SHA) {
+              throw "Existing release tag '$tag' points to '$tagCommit', not current source '$env:GITHUB_SHA'. Refusing to publish assets."
+            }
+          } elseif ($LASTEXITCODE -ne 1) {
+            throw "Could not determine whether release tag '$tag' already exists."
+          }
+
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
+            if (-not $tagExists) {
+              throw "Release '$tag' exists without a matching local tag reference. Refusing to replace its assets."
+            }
+
             $existingAssetNames = @(gh release view $tag --json assets --jq '.assets[].name')
             foreach ($assetName in $existingAssetNames) {
               if ($expectedAssetNames -notcontains $assetName) {
@@ -296,11 +358,13 @@ jobs:
             $createArgs = @(
               "release", "create", $tag
             ) + $assets + @(
-              "--target", $env:GITHUB_SHA,
               "--title", "PaperTodo $tag",
               "--notes-file", $notes
             )
 
+            if (-not $tagExists) {
+              $createArgs += @("--target", $env:GITHUB_SHA)
+            }
             if ($isPrerelease) {
               $createArgs += "--prerelease"
             }
