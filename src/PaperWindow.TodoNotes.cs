@@ -8,6 +8,7 @@ namespace PaperTodo;
 public sealed partial class PaperWindow
 {
     private Window? _todoNoteEditor;
+    private string? _todoNoteEditorItemId;
 
     private void EditTodoNote(PaperItem item)
     {
@@ -27,6 +28,7 @@ public sealed partial class PaperWindow
             item.Note,
             note => SaveTodoNote(itemId, note));
         _todoNoteEditor = editor;
+        _todoNoteEditorItemId = itemId;
         editor.Closed += (_, _) =>
         {
             if (!ReferenceEquals(_todoNoteEditor, editor))
@@ -35,6 +37,7 @@ public sealed partial class PaperWindow
             }
 
             _todoNoteEditor = null;
+            _todoNoteEditorItemId = null;
             RefreshExperimentalFocusPresentation();
         };
 
@@ -69,10 +72,20 @@ public sealed partial class PaperWindow
 
     private bool HasOpenTodoNoteEditor() => _todoNoteEditor != null;
 
+    private bool HasTodoNoteEditorForDifferentItem(string itemId) =>
+        _todoNoteEditor != null &&
+        !string.Equals(
+            _todoNoteEditorItemId,
+            itemId,
+            StringComparison.Ordinal);
+
+    internal string? TodoNoteEditorItemId => _todoNoteEditorItemId;
+
     private void CloseTodoNoteEditor()
     {
         var editor = _todoNoteEditor;
         _todoNoteEditor = null;
+        _todoNoteEditorItemId = null;
         editor?.Close();
     }
 

@@ -64,6 +64,7 @@ public sealed partial class PaperWindow
 
     private void RebuildTodoRows(string? focusItemId = null, TodoFocusPlacement focusPlacement = TodoFocusPlacement.End)
     {
+        DismissTodoCompletionRecordPrompt(animate: false);
         InvalidateEdgeCapsulePreviewContent();
         if (_todoPanel == null)
         {
@@ -108,6 +109,7 @@ public sealed partial class PaperWindow
         string? focusItemId = null,
         TodoFocusPlacement focusPlacement = TodoFocusPlacement.End)
     {
+        DismissTodoCompletionRecordPrompt(animate: false);
         InvalidateEdgeCapsulePreviewContent();
         if (_todoPanel == null)
         {
@@ -604,6 +606,7 @@ public sealed partial class PaperWindow
 
         check.Checked += (_, _) =>
         {
+            var wasDone = item.Done;
             PushUndoSnapshot();
             item.SetDone(true);
             InvalidateEdgeCapsulePreviewContent();
@@ -627,6 +630,7 @@ public sealed partial class PaperWindow
 
             if (_controller.State.AutoClearCompletedTodos)
             {
+                DismissTodoCompletionRecordPromptForItem(item.Id);
                 RemoveItem(item, pushUndo: false);
                 return;
             }
@@ -634,6 +638,10 @@ public sealed partial class PaperWindow
             if (MoveTodoItemsAfterDoneChange([item], done: true))
             {
                 ReconcileTodoRows([item.Id]);
+                ShowTodoCompletionRecordPrompt(
+                    item,
+                    wasDone,
+                    TodoCompletionRecordOrigin.DirectCheckbox);
                 return;
             }
 
@@ -642,10 +650,16 @@ public sealed partial class PaperWindow
             {
                 AnimationHelper.FadeTo(row, 0.75, 200, AnimationHelper.QuickEase);
             }
+
+            ShowTodoCompletionRecordPrompt(
+                item,
+                wasDone,
+                TodoCompletionRecordOrigin.DirectCheckbox);
         };
 
         check.Unchecked += (_, _) =>
         {
+            DismissTodoCompletionRecordPromptForItem(item.Id);
             PushUndoSnapshot();
             item.SetDone(false);
             InvalidateEdgeCapsulePreviewContent();
@@ -1381,6 +1395,7 @@ public sealed partial class PaperWindow
 
     private void RemoveItem(PaperItem item, bool rebuild = true, string? focusItemId = null, bool pushUndo = true)
     {
+        DismissTodoCompletionRecordPromptForItem(item.Id);
         if (pushUndo)
         {
             PushUndoSnapshot();
