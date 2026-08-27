@@ -825,4 +825,7 @@ Board 每次从 Todo `PaperData.Items` 生成投影。任务行和日历项只�
 
 - `CONTEXT.md` 的活动跨度、计划时段、计划开始日、截止日、活动月历与计划时间线定义。
 - D-023 已确立的 Board paper 单例、只读投影和 owning paper 写入边界。
-- `src/Models.cs` 与 `src/PaperWindow.TodoBoard.cs` 是当前历史时间和 Board 投影的实现基线。
+- `src/Models.cs` / `src/PaperWindow.TodoPlanning.cs`：authoritative 计划字段、范围验证与 owning Todo paper 编辑入口。
+- `src/TodoBoardProjection.cs` / `src/TodoBoardPlanningTimelineLayout.cs` / `src/PaperWindow.TodoBoardPlanningTimeline.cs`：共享查询和只读计划时间线。
+- `src/PaperCommandService.cs` / `src/McpCommandService.cs` / `src/PaperBodyPluginHostApi.cs`：外部快照、计划日期 mutation、保存失败回滚与事件边界。
+- `src/PaperMarkdownExporter.cs`：Todo 与 Board 的计划日期全量导出。

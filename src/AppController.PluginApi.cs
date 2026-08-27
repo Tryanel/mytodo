@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Threading;
 using PaperTodo.Plugin;
 
 namespace PaperTodo;
@@ -6,6 +7,7 @@ namespace PaperTodo;
 public sealed partial class AppController
 {
     private PaperBodyPluginEventHub? _paperBodyPluginEvents;
+    private readonly Dispatcher? _paperBodyPluginEventDispatcherOverride;
     private PaperCommandService? _paperCommands;
     private readonly HashSet<string> _pendingPluginPaperStateDeletes =
         new(StringComparer.Ordinal);
@@ -13,6 +15,7 @@ public sealed partial class AppController
     internal PaperBodyPluginEventHub PaperBodyPluginEvents =>
         _paperBodyPluginEvents ??= new PaperBodyPluginEventHub(
             this,
+            _paperBodyPluginEventDispatcherOverride ??
             Application.Current.Dispatcher);
 
     internal PaperCommandService PaperCommands =>
@@ -42,7 +45,9 @@ public sealed partial class AppController
         {
             Note = item.Note,
             CreatedAt = item.CreatedAt,
-            CompletedAt = item.CompletedAt
+            CompletedAt = item.CompletedAt,
+            PlannedStartDate = item.PlannedStartDate,
+            DueDate = item.DueDate
         };
 
     internal NoteSnapshot CaptureNoteSnapshot(PaperData paper)
@@ -91,6 +96,9 @@ public sealed partial class AppController
         FinalizeMcpPaperCreated(paper, show);
 
     internal void RefreshExternalTodoPaper(PaperData paper) =>
+        RefreshMcpTodoPaper(paper);
+
+    internal void RefreshExternalTodoRollback(PaperData paper) =>
         RefreshMcpTodoPaper(paper);
 
     internal void RefreshExternalNotePaper(PaperData paper) =>

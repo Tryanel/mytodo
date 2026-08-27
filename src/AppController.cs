@@ -145,7 +145,14 @@ public sealed partial class AppController : IDisposable
     }
 
     public AppController()
+        : this(null)
     {
+    }
+
+    internal AppController(Dispatcher? paperBodyPluginEventDispatcherOverride)
+    {
+        _paperBodyPluginEventDispatcherOverride =
+            paperBodyPluginEventDispatcherOverride;
         Current = this;
         State = _store.Load();
         Theme.Invalidate();
@@ -1261,7 +1268,7 @@ public sealed partial class AppController : IDisposable
         return _visibilityAnimationVersions.TryGetValue(paperId, out var current) && current == version;
     }
 
-    private PaperWindow GetOrCreatePaperWindow(
+    internal PaperWindow GetOrCreatePaperWindow(
         PaperData paper,
         bool deferShellConstruction = false)
     {

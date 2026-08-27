@@ -136,6 +136,7 @@ public sealed partial class AppController
             window.RefreshTodoRowsForExternalChange();
         }
         NotifyTodoReminderCollectionChanged();
+        NotifyTodoBoardStateChanged();
         RefreshTrayMenu();
     }
 
@@ -205,6 +206,7 @@ public sealed partial class AppController
             "- Call `get_paper` before replacing existing todo text, todo note, completion state, or note-paper content.",
             "- Prefer additive operations (`create_todo_paper`, `create_note`, `add_todos`) when they satisfy the request.",
             "- Use `update_todo`, `write_note`, `set_todo_reminder`, and delete tools only when the requested mutation requires them.",
+            "- Use yyyy-MM-dd planning dates; omit a planning field to preserve it and pass an empty string to clear it.",
             "- Preserve the user's existing paper structure unless the user explicitly asks to reorganize it.",
             "- Treat permission errors as PaperTodo policy, not as transport failures; do not retry a rejected mutation with a more destructive tool.",
             "- For reminders, use an explicit future ISO 8601 time with UTC offset.",

@@ -185,11 +185,16 @@ internal sealed class McpCommandService
         var hasLinkedPaper = parameters.TryGetProperty(
             "linked_paper_id",
             out var linkedPaperValue);
-        if (!hasText && !hasNote && !hasDone && !hasOrder && !hasLinkedPaper)
+        var hasPlannedStart = parameters.TryGetProperty(
+            "planned_start_date",
+            out var plannedStartValue);
+        var hasDue = parameters.TryGetProperty("due_date", out var dueValue);
+        if (!hasText && !hasNote && !hasDone && !hasOrder && !hasLinkedPaper &&
+            !hasPlannedStart && !hasDue)
         {
             throw new McpApiException(
                 "invalid_params",
-                "Provide text, note, done, order and/or linked_paper_id.");
+                "Provide text, note, done, order, linked_paper_id and/or a planning date.");
         }
 
         string? note = null;
@@ -257,6 +262,22 @@ internal sealed class McpCommandService
                 : RequiredStringValue(linkedPaperValue, "linked_paper_id", 64);
         }
 
+        TodoPlanningUpdate? planning = null;
+        if (hasPlannedStart || hasDue)
+        {
+            var plannedStartDate = hasPlannedStart
+                ? ParsePlanningDateValue(plannedStartValue, "planned_start_date")
+                : before.PlannedStartDate;
+            var dueDate = hasDue
+                ? ParsePlanningDateValue(dueValue, "due_date")
+                : before.DueDate;
+            if (plannedStartDate != before.PlannedStartDate || dueDate != before.DueDate)
+            {
+                RequireFullWrites();
+            }
+            planning = new TodoPlanningUpdate(plannedStartDate, dueDate);
+        }
+
         _commands.UpdateTodo(
             new UpdateTodoRequest
             {
@@ -267,7 +288,8 @@ internal sealed class McpCommandService
                 Done = done,
                 Order = order,
                 UpdateLinkedPaper = hasLinkedPaper,
-                LinkedPaperId = linkedPaperId
+                LinkedPaperId = linkedPaperId,
+                Planning = planning
             },
             PaperOperationContext.Mcp());
         return TodoDetails(RequireTodo(paperId, todoId));
@@ -446,7 +468,9 @@ internal sealed class McpCommandService
         linked_path = item.LinkedPath,
         reminder_at = item.ReminderAt?.ToString("O", CultureInfo.InvariantCulture),
         created_at = item.CreatedAt.ToString("O", CultureInfo.InvariantCulture),
-        completed_at = item.CompletedAt?.ToString("O", CultureInfo.InvariantCulture)
+        completed_at = item.CompletedAt?.ToString("O", CultureInfo.InvariantCulture),
+        planned_start_date = FormatPlanningDate(item.PlannedStartDate),
+        due_date = FormatPlanningDate(item.DueDate)
     };
 
     private PaperData RequirePaper(string paperId) =>
@@ -521,6 +545,8 @@ internal sealed class McpCommandService
                 PaperWindow.TodoNoteMaxLength,
                 allowEmpty: true) ?? "";
             var linkedPaperId = OptionalString(value, "linked_paper_id", 64);
+            var plannedStartDate = OptionalPlanningDate(value, "planned_start_date");
+            var dueDate = OptionalPlanningDate(value, "due_date");
             DateTimeOffset? reminderAt = null;
             if (value.TryGetProperty("reminder_at", out var reminderValue) &&
                 reminderValue.ValueKind != JsonValueKind.Null)
@@ -536,7 +562,9 @@ internal sealed class McpCommandService
                 Note = note,
                 Done = done,
                 LinkedPaperId = linkedPaperId,
-                ReminderAt = reminderAt
+                ReminderAt = reminderAt,
+                PlannedStartDate = plannedStartDate,
+                DueDate = dueDate
             });
         }
         return result;
@@ -548,6 +576,8 @@ internal sealed class McpCommandService
         if (inputs.Any(input =>
                 input.Done ||
                 input.ReminderAt.HasValue ||
+                input.PlannedStartDate.HasValue ||
+                input.DueDate.HasValue ||
                 !string.IsNullOrWhiteSpace(input.LinkedPaperId)))
         {
             RequireFullWrites();
@@ -599,6 +629,43 @@ internal sealed class McpCommandService
         }
         return parsed;
     }
+
+    private static DateOnly? OptionalPlanningDate(JsonElement parent, string name)
+    {
+        if (!parent.TryGetProperty(name, out var value))
+        {
+            return null;
+        }
+        return ParsePlanningDateValue(value, name);
+    }
+
+    private static DateOnly? ParsePlanningDateValue(JsonElement value, string name)
+    {
+        if (value.ValueKind == JsonValueKind.Null)
+        {
+            return null;
+        }
+        var text = RequiredStringValue(value, name, 10, allowEmpty: true);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+        if (!DateOnly.TryParseExact(
+                text,
+                "yyyy-MM-dd",
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var parsed))
+        {
+            throw new McpApiException(
+                "invalid_params",
+                $"{name} must be an ISO 8601 calendar date (yyyy-MM-dd), an empty string, or null.");
+        }
+        return parsed;
+    }
+
+    private static string? FormatPlanningDate(DateOnly? value) =>
+        value?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
     private static JsonElement RequireObject(JsonElement value, string name)
     {

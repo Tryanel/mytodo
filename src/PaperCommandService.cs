@@ -16,10 +16,19 @@ internal sealed class PaperCommandException : Exception
 internal sealed class PaperCommandService
 {
     private readonly AppController _controller;
+    private readonly Func<bool> _tryCommitExternalMutation;
 
     public PaperCommandService(AppController controller)
+        : this(controller, controller.TryCommitExternalMutation)
+    {
+    }
+
+    internal PaperCommandService(
+        AppController controller,
+        Func<bool> tryCommitExternalMutation)
     {
         _controller = controller;
+        _tryCommitExternalMutation = tryCommitExternalMutation;
     }
 
     public IReadOnlyList<PaperSnapshot> ListPapers(string? type = null)
@@ -153,7 +162,7 @@ internal sealed class PaperCommandService
                 AddTodoInputs(paper, todoInputs);
             }
 
-            if (!_controller.TryCommitExternalMutation())
+            if (!_tryCommitExternalMutation())
             {
                 _controller.RollbackExternalCreatedPaper(paper);
                 _controller.ResetPaperPluginEventBaseline();
@@ -196,9 +205,10 @@ internal sealed class PaperCommandService
                 addedIds.Add(item.Id);
             }
 
-            if (!_controller.TryCommitExternalMutation())
+            if (!_tryCommitExternalMutation())
             {
                 snapshot.Restore(paper);
+                _controller.RefreshExternalTodoRollback(paper);
                 _controller.ResetPaperPluginEventBaseline();
                 throw SaveFailed();
             }
@@ -222,11 +232,12 @@ internal sealed class PaperCommandService
             request.Note == null &&
             !request.Done.HasValue &&
             !request.Order.HasValue &&
-            !request.UpdateLinkedPaper)
+            !request.UpdateLinkedPaper &&
+            request.Planning == null)
         {
             throw Error(
                 "invalid_params",
-                "Provide text, note, done, order and/or updateLinkedPaper.");
+                "Provide text, note, done, order, updateLinkedPaper and/or planning.");
         }
 
         var paper = RequirePaper(
@@ -250,6 +261,7 @@ internal sealed class PaperCommandService
                 allowEmpty: true,
                 "note");
         var linkedPaperId = NormalizeLinkedPaperUpdate(request);
+        ValidateTodoPlanningUpdate(item, request, linkedPaperId);
         var snapshot = TodoPaperSnapshot.Capture(paper);
         var changedAt = DateTimeOffset.Now;
 
@@ -282,15 +294,28 @@ internal sealed class PaperCommandService
                     item.ReminderTriggered = false;
                 }
             }
+            if (request.Planning != null)
+            {
+                var planningResult = item.SetPlanningDates(
+                    request.Planning.PlannedStartDate,
+                    request.Planning.DueDate);
+                if (planningResult is TodoPlanningUpdateResult.InvalidRange or
+                    TodoPlanningUpdateResult.NotTask)
+                {
+                    throw new InvalidOperationException(
+                        "Validated external planning update could not be applied.");
+                }
+            }
             if (request.Order.HasValue)
             {
                 MoveTodo(paper, item, request.Order.Value);
             }
             NormalizeOrders(paper);
 
-            if (!_controller.TryCommitExternalMutation())
+            if (!_tryCommitExternalMutation())
             {
                 snapshot.Restore(paper);
+                _controller.RefreshExternalTodoRollback(paper);
                 _controller.ResetPaperPluginEventBaseline();
                 throw SaveFailed();
             }
@@ -339,9 +364,10 @@ internal sealed class PaperCommandService
             TodoTaskLifecycle.MaterializeIfNeeded(
                 item,
                 DateTimeOffset.Now);
-            if (!_controller.TryCommitExternalMutation())
+            if (!_tryCommitExternalMutation())
             {
                 snapshot.Restore(paper);
+                _controller.RefreshExternalTodoRollback(paper);
                 _controller.ResetPaperPluginEventBaseline();
                 throw SaveFailed();
             }
@@ -402,7 +428,7 @@ internal sealed class PaperCommandService
         using (_controller.SuppressPaperPluginEventScans())
         {
             paper.Content = result;
-            if (!_controller.TryCommitExternalMutation())
+            if (!_tryCommitExternalMutation())
             {
                 paper.Content = original;
                 _controller.ResetPaperPluginEventBaseline();
@@ -441,9 +467,10 @@ internal sealed class PaperCommandService
             }
             NormalizeOrders(paper);
 
-            if (!_controller.TryCommitExternalMutation())
+            if (!_tryCommitExternalMutation())
             {
                 snapshot.Restore(paper);
+                _controller.RefreshExternalTodoRollback(paper);
                 _controller.ResetPaperPluginEventBaseline();
                 throw SaveFailed();
             }
@@ -519,7 +546,7 @@ internal sealed class PaperCommandService
                 replacement.IsVisible = true;
             }
 
-            if (!_controller.TryCommitExternalMutation())
+            if (!_tryCommitExternalMutation())
             {
                 RestoreDeletedPaper(
                     papers,
@@ -584,6 +611,9 @@ internal sealed class PaperCommandService
             };
             item.LinkPaper(linkedPaperId);
             TodoTaskLifecycle.MaterializeIfNeeded(item, createdAt);
+            _ = item.SetPlanningDates(
+                input.PlannedStartDate,
+                input.DueDate);
             item.SetDone(input.Done, createdAt);
             paper.Items.Add(item);
             added.Add(item);
@@ -626,7 +656,58 @@ internal sealed class PaperCommandService
                     "A completed todo cannot start with a reminder.");
             }
             ValidateReminder(input.ReminderAt);
+            ValidatePlanningRange(
+                input.PlannedStartDate,
+                input.DueDate,
+                "todo");
             _ = NormalizeLinkedPaper(input.LinkedPaperId);
+        }
+    }
+
+    private static void ValidatePlanningRange(
+        DateOnly? plannedStartDate,
+        DateOnly? dueDate,
+        string name)
+    {
+        if (!PaperItem.IsPlanningRangeValid(plannedStartDate, dueDate))
+        {
+            throw Error(
+                "invalid_params",
+                $"{name}.plannedStartDate cannot be later than {name}.dueDate.");
+        }
+    }
+
+    private static void ValidateTodoPlanningUpdate(
+        PaperItem item,
+        UpdateTodoRequest request,
+        string? linkedPaperId)
+    {
+        if (request.Planning == null)
+        {
+            return;
+        }
+
+        ValidatePlanningRange(
+            request.Planning.PlannedStartDate,
+            request.Planning.DueDate,
+            "todo");
+        if ((!request.Planning.PlannedStartDate.HasValue &&
+             !request.Planning.DueDate.HasValue) ||
+            !TodoRules.IsPlaceholder(item))
+        {
+            return;
+        }
+
+        var willMaterialize =
+            !string.IsNullOrWhiteSpace(request.Text) ||
+            !string.IsNullOrWhiteSpace(request.Note) ||
+            request.Done == true ||
+            request.UpdateLinkedPaper && !string.IsNullOrWhiteSpace(linkedPaperId);
+        if (!willMaterialize)
+        {
+            throw Error(
+                "invalid_params",
+                "Planning dates cannot turn a blank placeholder into a task.");
         }
     }
 
@@ -839,6 +920,8 @@ internal sealed class PaperCommandService
         string Note,
         DateTimeOffset CreatedAt,
         DateTimeOffset? CompletedAt,
+        DateOnly? PlannedStartDate,
+        DateOnly? DueDate,
         string? LinkedPaperId,
         string? LinkedPath,
         DateTimeOffset? ReminderAt,
@@ -853,6 +936,8 @@ internal sealed class PaperCommandService
                 item.Note,
                 item.CreatedAt,
                 item.CompletedAt,
+                item.PlannedStartDate,
+                item.DueDate,
                 item.LinkedPaperId,
                 item.LinkedPath,
                 item.ReminderAt,
@@ -866,6 +951,7 @@ internal sealed class PaperCommandService
             Item.Note = Note;
             Item.CreatedAt = CreatedAt;
             Item.CompletedAt = CompletedAt;
+            Item.RestorePlanningDates(PlannedStartDate, DueDate);
             Item.RestoreQuickLaunch(LinkedPaperId, LinkedPath);
             Item.ReminderAt = ReminderAt;
             Item.ReminderTriggered = ReminderTriggered;

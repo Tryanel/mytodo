@@ -96,17 +96,26 @@ internal sealed class McpTools
         Destructive = true,
         Idempotent = true,
         OpenWorld = false)]
-    [Description("Fill or replace todo text or note and/or change completion state. Filling a blank field needs additive writes; replacing existing content or state needs full writes.")]
+    [Description("Fill or replace todo text or note, change completion state, and/or update planning dates. Filling a blank text field needs additive writes; replacing existing content, state, or planning needs full writes.")]
     public Task<JsonElement> UpdateTodo(
         [Description("Exact todo paper ID.")] string paper_id,
         [Description("Exact todo item ID.")] string todo_id,
         [Description("Replacement text. Omit to keep text unchanged.")] string? text = null,
         [Description("Replacement todo note. Omit to keep it unchanged; use an empty string to clear it.")] string? note = null,
         [Description("Replacement completion state. Omit to keep it unchanged.")] bool? done = null,
+        [Description("ISO calendar date (yyyy-MM-dd). Omit to keep the planned start unchanged; use an empty string to clear it.")] string? planned_start_date = null,
+        [Description("ISO calendar date (yyyy-MM-dd). Omit to keep the due date unchanged; use an empty string to clear it.")] string? due_date = null,
         CancellationToken cancellationToken = default)
         => _client.InvokeAsync(
             "update_todo",
-            OptionalUpdateParameters(paper_id, todo_id, text, note, done),
+            OptionalUpdateParameters(
+                paper_id,
+                todo_id,
+                text,
+                note,
+                done,
+                planned_start_date,
+                due_date),
             cancellationToken);
 
     [McpServerTool(
@@ -178,7 +187,9 @@ internal sealed class McpTools
         string todoId,
         string? text,
         string? note,
-        bool? done)
+        bool? done,
+        string? plannedStartDate,
+        string? dueDate)
     {
         var parameters = new Dictionary<string, object?>
         {
@@ -196,6 +207,14 @@ internal sealed class McpTools
         if (done.HasValue)
         {
             parameters["done"] = done.Value;
+        }
+        if (plannedStartDate != null)
+        {
+            parameters["planned_start_date"] = plannedStartDate;
+        }
+        if (dueDate != null)
+        {
+            parameters["due_date"] = dueDate;
         }
         return parameters;
     }
@@ -218,4 +237,12 @@ internal sealed record McpTodoInput
     [JsonPropertyName("reminder_at")]
     [Description("Optional ISO 8601 future reminder date/time with UTC offset. Requires PaperTodo full writes.")]
     public string? ReminderAt { get; init; }
+
+    [JsonPropertyName("planned_start_date")]
+    [Description("Optional ISO calendar date (yyyy-MM-dd). Requires PaperTodo full writes.")]
+    public string? PlannedStartDate { get; init; }
+
+    [JsonPropertyName("due_date")]
+    [Description("Optional ISO calendar date (yyyy-MM-dd). Requires PaperTodo full writes.")]
+    public string? DueDate { get; init; }
 }

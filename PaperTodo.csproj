@@ -59,6 +59,9 @@
          transient and falls back to the normal HWND path when a surface cannot be created. -->
     <PackageReference Include="Vortice.DirectComposition" Version="3.8.3" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="PaperTodo.Tests" />
+  </ItemGroup>
   <!-- WinForms pulls System.Drawing into global usings; keep WPF type names unambiguous. -->
   <ItemGroup>
     <Using Remove="System.Drawing" />

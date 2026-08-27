@@ -174,6 +174,8 @@ Native assembly 一旦载入 CLR，不按 Web provider 的方式做进程内热�
 - 保存失败回滚内存状态；
 - 提交后刷新必要 UI 并发布外部变更事件。
 
+Todo 外部快照与创建/更新合同直接携带 authoritative `PaperItem` 的计划开始日和截止日；更新请求只有显式提供 planning patch 时才改变两端日期。日期字符串解析属于 transport 映射，最终范围验证、同步保存、失败回滚、Board 刷新和 `TodoChanged` 事件仍由共享命令边界统一完成。
+
 transport 权限、Web/Native surface 生命周期和 MCP protocol 不下沉到 `PaperCommandService`；反过来，transport 层也不建立另一套核心 mutation 实现。
 
 ### 5.4 Edge mini
@@ -197,7 +199,7 @@ Board 自有持久化字段包括普通纸片状态、`BoardView`、`BoardTimeli
 
 看板中的行和日历任务只负责展开、聚焦 owning Todo `PaperWindow` 并定位原任务；实际编辑、撤销、保存和外部事件仍沿用原纸片边界。`AppController.MarkDirty` 调度现有 Board paper 刷新，不把看板变成新的 state authority。创建入口返回现存 Board paper，避免产生多个全局看板。
 
-纸张 Markdown 导出由 `PaperMarkdownExporter` 从 authoritative 状态生成文件。Todo 导出包括勾选状态、备注、创建时间和完成时间；Note 导出当前正文；Board 导出按 owning Todo paper 分组的全局任务投影。导出是显式文件快照，不参与 `StateStore` 的主状态写入，也不成为可回读的第二份 authoritative 数据。
+纸张 Markdown 导出由 `PaperMarkdownExporter` 从 authoritative 状态生成文件。Todo 导出包括勾选状态、备注、创建/完成时间、计划开始日和截止日；Note 导出当前正文；Board 导出按 owning Todo paper 分组的全部任务，不受当前 Board 搜索、筛选、排序、视图或时间窗口影响。导出是显式文件快照，不参与 `StateStore` 的主状态写入，也不成为可回读的第二份 authoritative 数据。
 
 ## 6. Edge Capsule V3 Lite
 

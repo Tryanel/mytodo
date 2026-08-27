@@ -77,6 +77,8 @@ internal sealed class PaperBodyPluginHostApi : IPaperTodoHostApi, IDisposable
             if (todos.Any(item =>
                     item.Done ||
                     item.ReminderAt.HasValue ||
+                    item.PlannedStartDate.HasValue ||
+                    item.DueDate.HasValue ||
                     !string.IsNullOrWhiteSpace(item.LinkedPaperId)))
             {
                 Require(PaperTodoPermissionNames.TodosUpdate);
@@ -94,6 +96,8 @@ internal sealed class PaperBodyPluginHostApi : IPaperTodoHostApi, IDisposable
         if ((request.Todos ?? []).Any(item =>
                 item.Done ||
                 item.ReminderAt.HasValue ||
+                item.PlannedStartDate.HasValue ||
+                item.DueDate.HasValue ||
                 !string.IsNullOrWhiteSpace(item.LinkedPaperId)))
         {
             Require(PaperTodoPermissionNames.TodosUpdate);
@@ -247,7 +251,9 @@ internal sealed class PaperBodyPluginHostApi : IPaperTodoHostApi, IDisposable
             LinkedPath = canReadTodos ? value.LinkedPath : null,
             ReminderAt = canReadTodos ? value.ReminderAt : null,
             CreatedAt = canReadTodos ? value.CreatedAt : default,
-            CompletedAt = canReadTodos ? value.CompletedAt : null
+            CompletedAt = canReadTodos ? value.CompletedAt : null,
+            PlannedStartDate = canReadTodos ? value.PlannedStartDate : null,
+            DueDate = canReadTodos ? value.DueDate : null
         };
 
     private T Invoke<T>(Func<T> action)

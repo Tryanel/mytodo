@@ -344,6 +344,7 @@ internal sealed class PaperBodyPluginEventHub : IDisposable
         if (!string.Equals(before.LinkedPath, after.LinkedPath, StringComparison.Ordinal)) fields |= TodoChangedFields.LinkedPath;
         if (!string.Equals(before.Note, after.Note, StringComparison.Ordinal)) fields |= TodoChangedFields.Note;
         if (before.CreatedAt != after.CreatedAt || before.CompletedAt != after.CompletedAt) fields |= TodoChangedFields.Timestamps;
+        if (before.PlannedStartDate != after.PlannedStartDate || before.DueDate != after.DueDate) fields |= TodoChangedFields.PlanningDates;
         return fields;
     }
 
