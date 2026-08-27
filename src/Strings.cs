@@ -85,6 +85,8 @@ public static class Strings
             ["TodoPlanningInvalidRange"] = ["计划开始日不能晚于截止日。", "The planned start date cannot be later than the due date.", "計画開始日は期限日より後にできません。", "계획 시작일은 마감일보다 늦을 수 없습니다."],
             ["TodoPlanningRangeToolTip"] = ["计划：{0} → {1}", "Plan: {0} → {1}", "計画：{0} → {1}", "계획: {0} → {1}"],
             ["TodoNoteToolTip"] = ["备注：{0}", "Note: {0}", "メモ：{0}", "메모: {0}"],
+            ["TodoCompletionRecordAction"] = ["记录完成过程", "Record how it was done", "完了の経緯を記録", "완료 과정 기록"],
+            ["TodoCompletionRecordToolTip"] = ["打开任务备注，补充自己如何完成了它", "Open the task note to record how you completed it", "タスクメモを開き、完了までの経緯を記録します", "작업 메모를 열어 어떻게 완료했는지 기록합니다"],
             ["TodoNoteTitle"] = ["待办备注", "Todo note", "ToDo メモ", "할 일 메모"],
             ["TodoNoteClear"] = ["清除备注", "Clear note", "メモを消去", "메모 지우기"],
             ["CommonSave"] = ["保存", "Save", "保存", "저장"],
